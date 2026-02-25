@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
@@ -12,7 +13,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module DataFrame.Functions where
+module DataFrame.Functions (module DataFrame.Functions, module DataFrame.Operators) where
 
 import DataFrame.Internal.Column
 import DataFrame.Internal.DataFrame (
@@ -21,6 +22,7 @@ import DataFrame.Internal.DataFrame (
  )
 import DataFrame.Internal.Expression hiding (normalize)
 import DataFrame.Internal.Statistics
+import DataFrame.Operations.Core
 
 import Control.Applicative
 import Control.Monad
@@ -28,6 +30,7 @@ import Control.Monad.IO.Class
 import qualified Data.Char as Char
 import Data.Function
 import Data.Functor
+import Data.Int
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Maybe as Maybe
@@ -35,8 +38,10 @@ import qualified Data.Text as T
 import Data.Time
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
+import Data.Word
 import qualified DataFrame.IO.CSV as CSV
 import qualified DataFrame.IO.Parquet as Parquet
+import DataFrame.IO.Parquet.Thrift
 import DataFrame.Operators
 import Debug.Trace (trace)
 import Language.Haskell.TH
@@ -44,21 +49,6 @@ import qualified Language.Haskell.TH.Syntax as TH
 import Text.Regex.TDFA
 import Prelude hiding (maximum, minimum)
 import Prelude as P
-
-name :: (Show a) => Expr a -> T.Text
-name (Col n) = n
-name other =
-    error $
-        "You must call `name` on a column reference. Not the expression: " ++ show other
-
-col :: (Columnable a) => T.Text -> Expr a
-col = Col
-
-ifThenElse :: (Columnable a) => Expr Bool -> Expr a -> Expr a -> Expr a
-ifThenElse = If
-
-lit :: (Columnable a) => a -> Expr a
-lit = Lit
 
 lift :: (Columnable a, Columnable b) => (a -> b) -> Expr a -> Expr b
 lift f =
@@ -450,11 +440,34 @@ declareColumnsFromCsvFile path = do
             (CSV.readSeparated (CSV.defaultReadOptions{CSV.numColumns = Just 100}) path)
     declareColumns df
 
--- TODO: We don't have to read the whole file, we can just read the schema.
 declareColumnsFromParquetFile :: String -> DecsQ
 declareColumnsFromParquetFile path = do
-    df <- liftIO (Parquet.readParquet path)
+    metadata <- liftIO (Parquet.readMetadataFromPath path)
+    let df = schemaToEmptyDataFrame (schema metadata)
     declareColumns df
+
+schemaToEmptyDataFrame :: [SchemaElement] -> DataFrame
+schemaToEmptyDataFrame elems =
+    let leafElems = filter (\e -> numChildren e == 0) elems
+     in fromNamedColumns (map schemaElemToColumn leafElems)
+
+schemaElemToColumn :: SchemaElement -> (T.Text, Column)
+schemaElemToColumn elem =
+    let name = elementName elem
+     in (name, emptyColumnForType (elementType elem))
+
+emptyColumnForType :: TType -> Column
+emptyColumnForType = \case
+    BOOL -> fromList @Bool []
+    BYTE -> fromList @Word8 []
+    I16 -> fromList @Int16 []
+    I32 -> fromList @Int32 []
+    I64 -> fromList @Int64 []
+    I96 -> fromList @Int64 []
+    FLOAT -> fromList @Float []
+    DOUBLE -> fromList @Double []
+    STRING -> fromList @T.Text []
+    other -> error $ "Unsupported parquet type for column: " <> show other
 
 declareColumnsFromCsvWithOpts :: CSV.ReadOptions -> String -> DecsQ
 declareColumnsFromCsvWithOpts opts path = do

@@ -9,7 +9,7 @@ import qualified DataFrame.Functions as F
 
 import Data.Char
 import DataFrame.DecisionTree
-import DataFrame.Operators
+import DataFrame.Operators hiding (name)
 
 import System.Random
 

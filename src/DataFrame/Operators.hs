@@ -15,7 +15,7 @@ import DataFrame.Internal.Expression (
         binaryPrecedence,
         binarySymbol
     ),
-    Expr (Binary, Lit),
+    Expr (Binary, Col, If, Lit),
     NamedExpr,
     UExpr (UExpr),
  )
@@ -31,6 +31,21 @@ infixr 0 .=
 
 as :: (Columnable a) => Expr a -> T.Text -> NamedExpr
 as expr name = (name, UExpr expr)
+
+name :: (Show a) => Expr a -> T.Text
+name (Col n) = n
+name other =
+    error $
+        "You must call `name` on a column reference. Not the expression: " ++ show other
+
+col :: (Columnable a) => T.Text -> Expr a
+col = Col
+
+ifThenElse :: (Columnable a) => Expr Bool -> Expr a -> Expr a -> Expr a
+ifThenElse = If
+
+lit :: (Columnable a) => a -> Expr a
+lit = Lit
 
 (.=) :: (Columnable a) => T.Text -> Expr a -> NamedExpr
 (.=) = flip as
