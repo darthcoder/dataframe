@@ -3,6 +3,7 @@
 
 module Parquet where
 
+import Assertions (assertExpectException)
 import qualified DataFrame as D
 import qualified DataFrame.Functions as F
 
@@ -184,6 +185,117 @@ allTypesDictionary =
             "allTypesPlainSnappy"
             (D.filter (F.col @Int32 "id") (`elem` [0, 1]) allTypes)
             (unsafePerformIO (D.readParquet "./tests/data/alltypes_dictionary.parquet"))
+        )
+
+selectedColumnsWithOpts :: Test
+selectedColumnsWithOpts =
+    TestCase
+        ( assertEqual
+            "selectedColumnsWithOpts"
+            (D.select ["id", "bool_col"] allTypes)
+            ( unsafePerformIO
+                ( D.readParquetWithOpts
+                    (D.defaultParquetReadOptions{D.selectedColumns = Just ["id", "bool_col"]})
+                    "./tests/data/alltypes_plain.parquet"
+                )
+            )
+        )
+
+rowRangeWithOpts :: Test
+rowRangeWithOpts =
+    TestCase
+        ( assertEqual
+            "rowRangeWithOpts"
+            (3, 11)
+            ( unsafePerformIO
+                ( D.dimensions
+                    <$> D.readParquetWithOpts
+                        (D.defaultParquetReadOptions{D.rowRange = Just (2, 5)})
+                        "./tests/data/alltypes_plain.parquet"
+                )
+            )
+        )
+
+predicateWithOpts :: Test
+predicateWithOpts =
+    TestCase
+        ( assertEqual
+            "predicateWithOpts"
+            (D.fromNamedColumns [("id", D.fromList [6 :: Int32, 7])])
+            ( unsafePerformIO
+                ( D.readParquetWithOpts
+                    ( D.defaultParquetReadOptions
+                        { D.selectedColumns = Just ["id"]
+                        , D.predicate =
+                            Just
+                                ( F.geq
+                                    (F.col @Int32 "id")
+                                    (F.lit (6 :: Int32))
+                                )
+                        }
+                    )
+                    "./tests/data/alltypes_plain.parquet"
+                )
+            )
+        )
+
+predicateUsesNonSelectedColumnWithOpts :: Test
+predicateUsesNonSelectedColumnWithOpts =
+    TestCase
+        ( assertEqual
+            "predicateUsesNonSelectedColumnWithOpts"
+            (D.fromNamedColumns [("bool_col", D.fromList [True, False])])
+            ( unsafePerformIO
+                ( D.readParquetWithOpts
+                    ( D.defaultParquetReadOptions
+                        { D.selectedColumns = Just ["bool_col"]
+                        , D.predicate =
+                            Just
+                                ( F.geq
+                                    (F.col @Int32 "id")
+                                    (F.lit (6 :: Int32))
+                                )
+                        }
+                    )
+                    "./tests/data/alltypes_plain.parquet"
+                )
+            )
+        )
+
+predicateWithOptsAcrossFiles :: Test
+predicateWithOptsAcrossFiles =
+    TestCase
+        ( assertEqual
+            "predicateWithOptsAcrossFiles"
+            (4, 1)
+            ( unsafePerformIO
+                ( D.dimensions
+                    <$> D.readParquetFilesWithOpts
+                        ( D.defaultParquetReadOptions
+                            { D.selectedColumns = Just ["id"]
+                            , D.predicate =
+                                Just
+                                    ( F.geq
+                                        (F.col @Int32 "id")
+                                        (F.lit (6 :: Int32))
+                                    )
+                            }
+                        )
+                        "./tests/data/alltypes_plain*.parquet"
+                )
+            )
+        )
+
+missingSelectedColumnWithOpts :: Test
+missingSelectedColumnWithOpts =
+    TestCase
+        ( assertExpectException
+            "missingSelectedColumnWithOpts"
+            "Column not found"
+            ( D.readParquetWithOpts
+                (D.defaultParquetReadOptions{D.selectedColumns = Just ["does_not_exist"]})
+                "./tests/data/alltypes_plain.parquet"
+            )
         )
 
 transactions :: D.DataFrame
@@ -819,6 +931,12 @@ tests =
     [ allTypesPlain
     , allTypesPlainSnappy
     , allTypesDictionary
+    , selectedColumnsWithOpts
+    , rowRangeWithOpts
+    , predicateWithOpts
+    , predicateUsesNonSelectedColumnWithOpts
+    , predicateWithOptsAcrossFiles
+    , missingSelectedColumnWithOpts
     , mtCars
     , allTypesTinyPagesLastFew
     , allTypesTinyPagesDimensions

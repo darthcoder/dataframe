@@ -105,6 +105,7 @@ __I/O__
   * @D.readTsv :: FilePath -> IO DataFrame@
   * @D.writeCsv :: FilePath -> DataFrame -> IO ()@
   * @D.readParquet :: FilePath -> IO DataFrame@
+  * @D.readParquetWithOpts :: ParquetReadOptions -> FilePath -> IO DataFrame@
 
 __Exploration__
 
@@ -252,7 +253,14 @@ import DataFrame.IO.CSV as CSV (
     writeCsv,
     writeSeparated,
  )
-import DataFrame.IO.Parquet as Parquet (readParquet, readParquetFiles)
+import DataFrame.IO.Parquet as Parquet (
+    ParquetReadOptions (..),
+    defaultParquetReadOptions,
+    readParquet,
+    readParquetFiles,
+    readParquetFilesWithOpts,
+    readParquetWithOpts,
+ )
 import DataFrame.IO.Unstable.CSV as UnstableCSV (
     fastReadCsvUnstable,
     fastReadTsvUnstable,
