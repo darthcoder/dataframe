@@ -207,7 +207,26 @@ Histograms are bar plots where each bar represents the frequency (count) or prop
 range of value. Going back to our california housing dataset, we can plot a histogram of house prices:
 
 ```haskell
-D.plotHistogram "median_house_value" df
+-- cabal: build-depends: granite
+import Granite.Svg
+import qualified Data.Text.IO as T
+import qualified Data.Text as T
+
+let houseValues = D.columnAsList (F.col @Double "median_house_value") df
+
+T.putStrLn $
+      histogram
+          (bins 30 140000 502000)
+          houseValues
+          defPlot
+              { widthChars = 68
+              , heightChars = 18
+              , legendPos = LegendBottom
+              , xFormatter = \_ _ v -> T.pack (show (round v :: Int))
+              , xNumTicks = 10
+              , yNumTicks = 5
+              , plotTitle = "Median House Prices of California Houses ($)"
+              }
 ```
 
 From the histogram above we can already tell things like whether or not there are outliers, the central tendency of the data, and the spread.

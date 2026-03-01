@@ -35,11 +35,13 @@ import qualified Data.Text.IO as TIO
 df <- D.readCsv "../dataframe/data/housing.csv" 
 
 TIO.putStrLn $ D.toMarkdownTable $ D.frequencies "ocean_proximity" df
+
 ```
-> | Statistic<br>Text | <1H OCEAN<br>Any | INLAND<br>Any | ISLAND<br>Any | NEAR BAY<br>Any | NEAR OCEAN<br>Any |
-> | ------------------|------------------|---------------|---------------|-----------------|------------------ |
-> | Count             | 9136             | 6551          | 5             | 2290            | 2658              |
-> | Percentage (%)    | 44.26%           | 31.74%        | 0.02%         | 11.09%          | 12.88%            |
+
+> | Statistic<br>Text | ocean_proximity<br>Any |
+> | ------------------|----------------------- |
+> | Count             | 20640                  |
+> | Percentage (%)    | 100.00%                |
 
 
 We can also plot similar tables for non-categorical data with a small value set e.g shoe sizes.
@@ -61,7 +63,9 @@ Arguably the first thing to do when presented with a datset is check for null va
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable $ D.describeColumns df
+
 ```
+
 > | Column Name<br>Text | # Non-null Values<br>Int | # Null Values<br>Int | Type<br>Text |
 > | --------------------|--------------------------|----------------------|------------- |
 > | total_bedrooms      | 20433                    | 207                  | Maybe Double |
@@ -90,7 +94,9 @@ import qualified DataFrame.Functions as F
 D.mean (F.col @Double "housing_median_age") df
 
 D.median (F.col @Double "housing_median_age") df
+
 ```
+
 > 28.639486434108527
 > 29.0
 
@@ -115,7 +121,9 @@ TIO.putStrLn $ D.toMarkdownTable $
    df |> D.derive "deviation" (abs (median_house_value - (F.mean median_house_value)))
       |> D.select ["median_house_value", "deviation"]
       |> D.take 10
+
 ```
+
 > | median_house_value<br>Double | deviation<br>Double |
 > | -----------------------------|-------------------- |
 > | 452600.0                     | 245744.18309108526  |
@@ -143,7 +151,9 @@ From the small sample it does seem like there are some wild deviations. The firs
 df |> D.derive "deviation" (abs (median_house_value - (F.mean median_house_value)))
    |> D.select ["median_house_value", "deviation"]
    |> D.mean (F.col @Double "deviation")
+
 ```
+
 > 91170.43994367118
 
 
@@ -172,7 +182,9 @@ sumOfSqureDifferences = withDeviation |> D.derive "deviation^2" (F.pow deviation
 n = fromIntegral (fst (D.dimensions df) - 1)
 
 sqrt (sumOfSqureDifferences / n)
+
 ```
+
 > 2765.8049483764235
 
 The standard deviation being larger than the mean absolute deviation means we do have some outliers. However, since the difference is fairly small we can conclude that there aren't very many outliers in our dataset.
@@ -182,7 +194,9 @@ We can calculate the standard deviation in one line as follows:
 
 ```haskell
 D.standardDeviation (F.col @Double "median_house_value") df
+
 ```
+
 > 115395.61587441359
 
 
@@ -196,7 +210,9 @@ For our dataset:
 
 ```haskell
 D.interQuartileRange (F.col @Double "median_house_value") df
+
 ```
+
 > 145125.0
 
 
@@ -210,7 +226,9 @@ In our example it's a very large number:
 
 ```haskell
 D.variance (F.col @Double "median_house_value") df
+
 ```
+
 > 1.3316148163035213e10
 
 
@@ -228,7 +246,9 @@ A skewness score between -0.5 and 0.5 means the data has little skew. A score be
 
 ```haskell
 D.skewness (F.col @Double "median_house_value") df
+
 ```
+
 > 0.977668529406543
 
 So the median house value is moderately skewed to the left. That is, there are more houses that are cheaper than the mean values and a tail of expensive outliers. Having lived in California, I can confirm that this data reflects reality.
@@ -241,7 +261,9 @@ We can get all these statistics with a single command:
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable $ D.summarize df
-```  
+
+```
+
 > | Statistic<br>Text | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double |
 > | ------------------|---------------------|--------------------|------------------------------|-----------------------|--------------------------|----------------------|----------------------|-------------------------|----------------------------- |
 > | Count             | 20640.0             | 20640.0            | 20640.0                      | 20640.0               | 20433.0                  | 20640.0              | 20640.0              | 20640.0                 | 20640.0                      |
@@ -278,34 +300,112 @@ range of value. Going back to our california housing dataset, we can plot a hist
 
 
 ```haskell
-D.plotHistogram "median_house_value" df
+-- cabal: build-depends: granite
+import Granite.Svg
+import qualified Data.Text.IO as T
+import qualified Data.Text as T
+
+let houseValues = D.columnAsList (F.col @Double "median_house_value") df
+
+T.putStrLn $
+      histogram
+          (bins 30 140000 502000)
+          houseValues
+          defPlot
+              { widthChars = 68
+              , heightChars = 18
+              , legendPos = LegendBottom
+              , xFormatter = \_ _ v -> T.pack (show (round v :: Int))
+              , xNumTicks = 10
+              , yNumTicks = 5
+              , plotTitle = "Median House Prices of California Houses ($)"
+              }
+
 ```
-> ```
-> 1501.0│                ▁▁██                                        
->       │              ▂▂████                                        
->       │        ██  ▂▂████████                                      
->       │        ██▅▅██████████                                      
->       │        ██████████████                                      
->       │        ██████████████  ▄▄                                ▁▁
->       │      ▄▄██████████████  ██                                ██
->       │      ████████████████▂▂██▆▆                              ██
->       │      ██████████████████████                              ██
->       │      ██████████████████████                              ██
->  750.5│    ██████████████████████████▆▆                          ██
->       │    ████████████████████████████▂▂                        ██
->       │    ██████████████████████████████                        ██
->       │    ██████████████████████████████                        ██
->       │    ██████████████████████████████▅▅  ▅▅██                ██
->       │    ████████████████████████████████▇▇████▁▁              ██
->       │    ████████████████████████████████████████▁▁            ██
->       │    ██████████████████████████████████████████▆▆▂▂  ▁▁    ██
->       │  ▄▄██████████████████████████████████████████████▇▇██▂▂▁▁██
->    0.0│▂▂██████████████████████████████████████████████████████████
->       └────────────────────────────────────────────────────────────
->        1.5e4                         2.6e5                        5.0e5
->
-> ⣿ count
-> ```
+
+> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 770 394" width="770" height="394" font-family="system-ui, -apple-system, sans-serif">
+> <rect width="100%" height="100%" fill="white"/>
+> <text x="410" y="26" text-anchor="middle" fill="#222" font-size="14">Median House Prices of California Houses ($)</text>
+> <line x1="70" y1="322" x2="750" y2="322" stroke="#aaa" stroke-width="1"/>
+> <line x1="70" y1="34" x2="70" y2="322" stroke="#aaa" stroke-width="1"/>
+> <line x1="70" y1="34" x2="66" y2="34" stroke="#aaa" stroke-width="1"/>
+> <text x="62" y="38" text-anchor="end" fill="#555" font-size="11">1252.0</text>
+> <line x1="70" y1="34" x2="750" y2="34" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="106.25" x2="66" y2="106.25" stroke="#aaa" stroke-width="1"/>
+> <text x="62" y="110.25" text-anchor="end" fill="#555" font-size="11">939.0</text>
+> <line x1="70" y1="106.25" x2="750" y2="106.25" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="178.50" x2="66" y2="178.50" stroke="#aaa" stroke-width="1"/>
+> <text x="62" y="182.50" text-anchor="end" fill="#555" font-size="11">626.0</text>
+> <line x1="70" y1="178.50" x2="750" y2="178.50" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="249.75" x2="66" y2="249.75" stroke="#aaa" stroke-width="1"/>
+> <text x="62" y="253.75" text-anchor="end" fill="#555" font-size="11">313.0</text>
+> <line x1="70" y1="249.75" x2="750" y2="249.75" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="322" x2="66" y2="322" stroke="#aaa" stroke-width="1"/>
+> <text x="62" y="326" text-anchor="end" fill="#555" font-size="11">0.0</text>
+> <line x1="70" y1="322" x2="750" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="322" x2="70" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="70" y="338" text-anchor="middle" fill="#555" font-size="11">140000</text>
+> <line x1="70" y1="34" x2="70" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="145.11" y1="322" x2="145.11" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="145.11" y="338" text-anchor="middle" fill="#555" font-size="11">180222</text>
+> <line x1="145.11" y1="34" x2="145.11" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="221.22" y1="322" x2="221.22" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="221.22" y="338" text-anchor="middle" fill="#555" font-size="11">220444</text>
+> <line x1="221.22" y1="34" x2="221.22" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="296.33" y1="322" x2="296.33" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="296.33" y="338" text-anchor="middle" fill="#555" font-size="11">260667</text>
+> <line x1="296.33" y1="34" x2="296.33" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="372.44" y1="322" x2="372.44" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="372.44" y="338" text-anchor="middle" fill="#555" font-size="11">300889</text>
+> <line x1="372.44" y1="34" x2="372.44" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="447.56" y1="322" x2="447.56" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="447.56" y="338" text-anchor="middle" fill="#555" font-size="11">341111</text>
+> <line x1="447.56" y1="34" x2="447.56" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="523.67" y1="322" x2="523.67" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="523.67" y="338" text-anchor="middle" fill="#555" font-size="11">381333</text>
+> <line x1="523.67" y1="34" x2="523.67" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="598.78" y1="322" x2="598.78" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="598.78" y="338" text-anchor="middle" fill="#555" font-size="11">421556</text>
+> <line x1="598.78" y1="34" x2="598.78" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="674.89" y1="322" x2="674.89" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="674.89" y="338" text-anchor="middle" fill="#555" font-size="11">461778</text>
+> <line x1="674.89" y1="34" x2="674.89" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <line x1="750" y1="322" x2="750" y2="326" stroke="#aaa" stroke-width="1"/>
+> <text x="750" y="338" text-anchor="middle" fill="#555" font-size="11">502000</text>
+> <line x1="750" y1="34" x2="750" y2="322" stroke="#eee" stroke-width="0.50"/>
+> <rect x="70" y="86.91" width="21.67" height="235.09" fill="#1abc9c"/>
+> <rect x="92.67" y="34.00" width="21.67" height="288.00" fill="#1abc9c"/>
+> <rect x="115.33" y="83.92" width="21.67" height="238.08" fill="#1abc9c"/>
+> <rect x="138" y="88.98" width="21.67" height="233.02" fill="#1abc9c"/>
+> <rect x="160.67" y="123.94" width="21.67" height="198.06" fill="#1abc9c"/>
+> <rect x="183.33" y="182.60" width="21.67" height="139.40" fill="#1abc9c"/>
+> <rect x="206" y="140.04" width="21.67" height="181.96" fill="#1abc9c"/>
+> <rect x="228.67" y="138.66" width="21.67" height="183.34" fill="#1abc9c"/>
+> <rect x="251.33" y="175.70" width="21.67" height="146.30" fill="#1abc9c"/>
+> <rect x="274" y="202.84" width="21.67" height="119.16" fill="#1abc9c"/>
+> <rect x="296.67" y="192.72" width="21.67" height="129.28" fill="#1abc9c"/>
+> <rect x="319.33" y="211.81" width="21.67" height="110.19" fill="#1abc9c"/>
+> <rect x="342" y="230.91" width="21.67" height="91.09" fill="#1abc9c"/>
+> <rect x="364.67" y="260.81" width="21.67" height="61.19" fill="#1abc9c"/>
+> <rect x="387.33" y="257.13" width="21.67" height="64.87" fill="#1abc9c"/>
+> <rect x="410" y="253.22" width="21.67" height="68.78" fill="#1abc9c"/>
+> <rect x="432.67" y="249.08" width="21.67" height="72.92" fill="#1abc9c"/>
+> <rect x="455.33" y="246.09" width="21.67" height="75.91" fill="#1abc9c"/>
+> <rect x="478" y="265.87" width="21.67" height="56.13" fill="#1abc9c"/>
+> <rect x="500.67" y="281.28" width="21.67" height="40.72" fill="#1abc9c"/>
+> <rect x="523.33" y="287.96" width="21.67" height="34.04" fill="#1abc9c"/>
+> <rect x="546" y="285.88" width="21.67" height="36.12" fill="#1abc9c"/>
+> <rect x="568.67" y="292.79" width="21.67" height="29.21" fill="#1abc9c"/>
+> <rect x="591.33" y="297.16" width="21.67" height="24.84" fill="#1abc9c"/>
+> <rect x="614" y="296.24" width="21.67" height="25.76" fill="#1abc9c"/>
+> <rect x="636.67" y="293.71" width="21.67" height="28.29" fill="#1abc9c"/>
+> <rect x="659.33" y="305.67" width="21.67" height="16.33" fill="#1abc9c"/>
+> <rect x="682" y="305.44" width="21.67" height="16.56" fill="#1abc9c"/>
+> <rect x="704.67" y="309.81" width="21.67" height="12.19" fill="#1abc9c"/>
+> <rect x="727.33" y="84.61" width="21.67" height="237.39" fill="#1abc9c"/>
+> <rect x="377.50" y="375" width="12" height="12" fill="#1abc9c"/>
+> <text x="393.50" y="385" text-anchor="start" fill="#555" font-size="11">count</text>
+> </svg>
 
 
 From the histogram above we can already tell things like whether or not there are outliers, the central tendency of the data, and the spread.
