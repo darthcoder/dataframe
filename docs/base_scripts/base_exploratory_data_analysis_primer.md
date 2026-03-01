@@ -219,9 +219,7 @@ T.putStrLn $
           (bins 30 140000 502000)
           houseValues
           defPlot
-              { widthChars = 68
-              , heightChars = 18
-              , legendPos = LegendBottom
+              { legendPos = LegendBottom
               , xFormatter = \_ _ v -> T.pack (show (round v :: Int))
               , xNumTicks = 10
               , yNumTicks = 5

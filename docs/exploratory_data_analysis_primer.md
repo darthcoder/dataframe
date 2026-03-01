@@ -312,9 +312,7 @@ T.putStrLn $
           (bins 30 140000 502000)
           houseValues
           defPlot
-              { widthChars = 68
-              , heightChars = 18
-              , legendPos = LegendBottom
+              { legendPos = LegendBottom
               , xFormatter = \_ _ v -> T.pack (show (round v :: Int))
               , xNumTicks = 10
               , yNumTicks = 5
@@ -323,88 +321,88 @@ T.putStrLn $
 
 ```
 
-> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 770 394" width="770" height="394" font-family="system-ui, -apple-system, sans-serif">
+> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 690 426" width="690" height="426" font-family="system-ui, -apple-system, sans-serif">
 > <rect width="100%" height="100%" fill="white"/>
-> <text x="410" y="26" text-anchor="middle" fill="#222" font-size="14">Median House Prices of California Houses ($)</text>
-> <line x1="70" y1="322" x2="750" y2="322" stroke="#aaa" stroke-width="1"/>
-> <line x1="70" y1="34" x2="70" y2="322" stroke="#aaa" stroke-width="1"/>
+> <text x="370" y="26" text-anchor="middle" fill="#222" font-size="14">Median House Prices of California Houses ($)</text>
+> <line x1="70" y1="354" x2="670" y2="354" stroke="#aaa" stroke-width="1"/>
+> <line x1="70" y1="34" x2="70" y2="354" stroke="#aaa" stroke-width="1"/>
 > <line x1="70" y1="34" x2="66" y2="34" stroke="#aaa" stroke-width="1"/>
 > <text x="62" y="38" text-anchor="end" fill="#555" font-size="11">1252.0</text>
-> <line x1="70" y1="34" x2="750" y2="34" stroke="#eee" stroke-width="0.50"/>
-> <line x1="70" y1="106.25" x2="66" y2="106.25" stroke="#aaa" stroke-width="1"/>
-> <text x="62" y="110.25" text-anchor="end" fill="#555" font-size="11">939.0</text>
-> <line x1="70" y1="106.25" x2="750" y2="106.25" stroke="#eee" stroke-width="0.50"/>
-> <line x1="70" y1="178.50" x2="66" y2="178.50" stroke="#aaa" stroke-width="1"/>
-> <text x="62" y="182.50" text-anchor="end" fill="#555" font-size="11">626.0</text>
-> <line x1="70" y1="178.50" x2="750" y2="178.50" stroke="#eee" stroke-width="0.50"/>
-> <line x1="70" y1="249.75" x2="66" y2="249.75" stroke="#aaa" stroke-width="1"/>
-> <text x="62" y="253.75" text-anchor="end" fill="#555" font-size="11">313.0</text>
-> <line x1="70" y1="249.75" x2="750" y2="249.75" stroke="#eee" stroke-width="0.50"/>
-> <line x1="70" y1="322" x2="66" y2="322" stroke="#aaa" stroke-width="1"/>
-> <text x="62" y="326" text-anchor="end" fill="#555" font-size="11">0.0</text>
-> <line x1="70" y1="322" x2="750" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="70" y1="322" x2="70" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="70" y="338" text-anchor="middle" fill="#555" font-size="11">140000</text>
-> <line x1="70" y1="34" x2="70" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="145.11" y1="322" x2="145.11" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="145.11" y="338" text-anchor="middle" fill="#555" font-size="11">180222</text>
-> <line x1="145.11" y1="34" x2="145.11" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="221.22" y1="322" x2="221.22" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="221.22" y="338" text-anchor="middle" fill="#555" font-size="11">220444</text>
-> <line x1="221.22" y1="34" x2="221.22" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="296.33" y1="322" x2="296.33" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="296.33" y="338" text-anchor="middle" fill="#555" font-size="11">260667</text>
-> <line x1="296.33" y1="34" x2="296.33" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="372.44" y1="322" x2="372.44" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="372.44" y="338" text-anchor="middle" fill="#555" font-size="11">300889</text>
-> <line x1="372.44" y1="34" x2="372.44" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="447.56" y1="322" x2="447.56" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="447.56" y="338" text-anchor="middle" fill="#555" font-size="11">341111</text>
-> <line x1="447.56" y1="34" x2="447.56" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="523.67" y1="322" x2="523.67" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="523.67" y="338" text-anchor="middle" fill="#555" font-size="11">381333</text>
-> <line x1="523.67" y1="34" x2="523.67" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="598.78" y1="322" x2="598.78" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="598.78" y="338" text-anchor="middle" fill="#555" font-size="11">421556</text>
-> <line x1="598.78" y1="34" x2="598.78" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="674.89" y1="322" x2="674.89" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="674.89" y="338" text-anchor="middle" fill="#555" font-size="11">461778</text>
-> <line x1="674.89" y1="34" x2="674.89" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <line x1="750" y1="322" x2="750" y2="326" stroke="#aaa" stroke-width="1"/>
-> <text x="750" y="338" text-anchor="middle" fill="#555" font-size="11">502000</text>
-> <line x1="750" y1="34" x2="750" y2="322" stroke="#eee" stroke-width="0.50"/>
-> <rect x="70" y="86.91" width="21.67" height="235.09" fill="#1abc9c"/>
-> <rect x="92.67" y="34.00" width="21.67" height="288.00" fill="#1abc9c"/>
-> <rect x="115.33" y="83.92" width="21.67" height="238.08" fill="#1abc9c"/>
-> <rect x="138" y="88.98" width="21.67" height="233.02" fill="#1abc9c"/>
-> <rect x="160.67" y="123.94" width="21.67" height="198.06" fill="#1abc9c"/>
-> <rect x="183.33" y="182.60" width="21.67" height="139.40" fill="#1abc9c"/>
-> <rect x="206" y="140.04" width="21.67" height="181.96" fill="#1abc9c"/>
-> <rect x="228.67" y="138.66" width="21.67" height="183.34" fill="#1abc9c"/>
-> <rect x="251.33" y="175.70" width="21.67" height="146.30" fill="#1abc9c"/>
-> <rect x="274" y="202.84" width="21.67" height="119.16" fill="#1abc9c"/>
-> <rect x="296.67" y="192.72" width="21.67" height="129.28" fill="#1abc9c"/>
-> <rect x="319.33" y="211.81" width="21.67" height="110.19" fill="#1abc9c"/>
-> <rect x="342" y="230.91" width="21.67" height="91.09" fill="#1abc9c"/>
-> <rect x="364.67" y="260.81" width="21.67" height="61.19" fill="#1abc9c"/>
-> <rect x="387.33" y="257.13" width="21.67" height="64.87" fill="#1abc9c"/>
-> <rect x="410" y="253.22" width="21.67" height="68.78" fill="#1abc9c"/>
-> <rect x="432.67" y="249.08" width="21.67" height="72.92" fill="#1abc9c"/>
-> <rect x="455.33" y="246.09" width="21.67" height="75.91" fill="#1abc9c"/>
-> <rect x="478" y="265.87" width="21.67" height="56.13" fill="#1abc9c"/>
-> <rect x="500.67" y="281.28" width="21.67" height="40.72" fill="#1abc9c"/>
-> <rect x="523.33" y="287.96" width="21.67" height="34.04" fill="#1abc9c"/>
-> <rect x="546" y="285.88" width="21.67" height="36.12" fill="#1abc9c"/>
-> <rect x="568.67" y="292.79" width="21.67" height="29.21" fill="#1abc9c"/>
-> <rect x="591.33" y="297.16" width="21.67" height="24.84" fill="#1abc9c"/>
-> <rect x="614" y="296.24" width="21.67" height="25.76" fill="#1abc9c"/>
-> <rect x="636.67" y="293.71" width="21.67" height="28.29" fill="#1abc9c"/>
-> <rect x="659.33" y="305.67" width="21.67" height="16.33" fill="#1abc9c"/>
-> <rect x="682" y="305.44" width="21.67" height="16.56" fill="#1abc9c"/>
-> <rect x="704.67" y="309.81" width="21.67" height="12.19" fill="#1abc9c"/>
-> <rect x="727.33" y="84.61" width="21.67" height="237.39" fill="#1abc9c"/>
-> <rect x="377.50" y="375" width="12" height="12" fill="#1abc9c"/>
-> <text x="393.50" y="385" text-anchor="start" fill="#555" font-size="11">count</text>
+> <line x1="70" y1="34" x2="670" y2="34" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="114.25" x2="66" y2="114.25" stroke="#aaa" stroke-width="1"/>
+> <text x="62" y="118.25" text-anchor="end" fill="#555" font-size="11">939.0</text>
+> <line x1="70" y1="114.25" x2="670" y2="114.25" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="194.50" x2="66" y2="194.50" stroke="#aaa" stroke-width="1"/>
+> <text x="62" y="198.50" text-anchor="end" fill="#555" font-size="11">626.0</text>
+> <line x1="70" y1="194.50" x2="670" y2="194.50" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="273.75" x2="66" y2="273.75" stroke="#aaa" stroke-width="1"/>
+> <text x="62" y="277.75" text-anchor="end" fill="#555" font-size="11">313.0</text>
+> <line x1="70" y1="273.75" x2="670" y2="273.75" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="354" x2="66" y2="354" stroke="#aaa" stroke-width="1"/>
+> <text x="62" y="358" text-anchor="end" fill="#555" font-size="11">0.0</text>
+> <line x1="70" y1="354" x2="670" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="70" y1="354" x2="70" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="70" y="370" text-anchor="middle" fill="#555" font-size="11">140000</text>
+> <line x1="70" y1="34" x2="70" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="137.11" y1="354" x2="137.11" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="137.11" y="370" text-anchor="middle" fill="#555" font-size="11">180222</text>
+> <line x1="137.11" y1="34" x2="137.11" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="203.22" y1="354" x2="203.22" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="203.22" y="370" text-anchor="middle" fill="#555" font-size="11">220444</text>
+> <line x1="203.22" y1="34" x2="203.22" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="270.33" y1="354" x2="270.33" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="270.33" y="370" text-anchor="middle" fill="#555" font-size="11">260667</text>
+> <line x1="270.33" y1="34" x2="270.33" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="336.44" y1="354" x2="336.44" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="336.44" y="370" text-anchor="middle" fill="#555" font-size="11">300889</text>
+> <line x1="336.44" y1="34" x2="336.44" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="403.56" y1="354" x2="403.56" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="403.56" y="370" text-anchor="middle" fill="#555" font-size="11">341111</text>
+> <line x1="403.56" y1="34" x2="403.56" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="469.67" y1="354" x2="469.67" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="469.67" y="370" text-anchor="middle" fill="#555" font-size="11">381333</text>
+> <line x1="469.67" y1="34" x2="469.67" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="536.78" y1="354" x2="536.78" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="536.78" y="370" text-anchor="middle" fill="#555" font-size="11">421556</text>
+> <line x1="536.78" y1="34" x2="536.78" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="602.89" y1="354" x2="602.89" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="602.89" y="370" text-anchor="middle" fill="#555" font-size="11">461778</text>
+> <line x1="602.89" y1="34" x2="602.89" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <line x1="670" y1="354" x2="670" y2="358" stroke="#aaa" stroke-width="1"/>
+> <text x="670" y="370" text-anchor="middle" fill="#555" font-size="11">502000</text>
+> <line x1="670" y1="34" x2="670" y2="354" stroke="#eee" stroke-width="0.50"/>
+> <rect x="70" y="92.79" width="19" height="261.21" fill="#1abc9c"/>
+> <rect x="90" y="34.00" width="19" height="320.00" fill="#1abc9c"/>
+> <rect x="110" y="89.46" width="19" height="264.54" fill="#1abc9c"/>
+> <rect x="130" y="95.09" width="19" height="258.91" fill="#1abc9c"/>
+> <rect x="150" y="133.94" width="19" height="220.06" fill="#1abc9c"/>
+> <rect x="170" y="199.11" width="19" height="154.89" fill="#1abc9c"/>
+> <rect x="190" y="151.83" width="19" height="202.17" fill="#1abc9c"/>
+> <rect x="210" y="150.29" width="19" height="203.71" fill="#1abc9c"/>
+> <rect x="230" y="191.44" width="19" height="162.56" fill="#1abc9c"/>
+> <rect x="250" y="221.60" width="19" height="132.40" fill="#1abc9c"/>
+> <rect x="270" y="210.36" width="19" height="143.64" fill="#1abc9c"/>
+> <rect x="290" y="231.57" width="19" height="122.43" fill="#1abc9c"/>
+> <rect x="310" y="252.79" width="19" height="101.21" fill="#1abc9c"/>
+> <rect x="330" y="286.01" width="19" height="67.99" fill="#1abc9c"/>
+> <rect x="350" y="281.92" width="19" height="72.08" fill="#1abc9c"/>
+> <rect x="370" y="277.58" width="19" height="76.42" fill="#1abc9c"/>
+> <rect x="390" y="272.98" width="19" height="81.02" fill="#1abc9c"/>
+> <rect x="410" y="269.65" width="19" height="84.35" fill="#1abc9c"/>
+> <rect x="430" y="291.64" width="19" height="62.36" fill="#1abc9c"/>
+> <rect x="450" y="308.76" width="19" height="45.24" fill="#1abc9c"/>
+> <rect x="470" y="316.17" width="19" height="37.83" fill="#1abc9c"/>
+> <rect x="490" y="313.87" width="19" height="40.13" fill="#1abc9c"/>
+> <rect x="510" y="321.54" width="19" height="32.46" fill="#1abc9c"/>
+> <rect x="530" y="326.40" width="19" height="27.60" fill="#1abc9c"/>
+> <rect x="550" y="325.37" width="19" height="28.63" fill="#1abc9c"/>
+> <rect x="570" y="322.56" width="19" height="31.44" fill="#1abc9c"/>
+> <rect x="590" y="335.85" width="19" height="18.15" fill="#1abc9c"/>
+> <rect x="610" y="335.60" width="19" height="18.40" fill="#1abc9c"/>
+> <rect x="630" y="340.45" width="19" height="13.55" fill="#1abc9c"/>
+> <rect x="650" y="90.23" width="19" height="263.77" fill="#1abc9c"/>
+> <rect x="337.50" y="407" width="12" height="12" fill="#1abc9c"/>
+> <text x="353.50" y="417" text-anchor="start" fill="#555" font-size="11">count</text>
 > </svg>
 
 
