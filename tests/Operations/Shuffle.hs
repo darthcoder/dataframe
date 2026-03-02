@@ -5,7 +5,9 @@ module Operations.Shuffle where
 
 import qualified DataFrame as D
 
-import DataFrame.Operations.Permutation (shuffle)
+import qualified Data.Set as Set
+import qualified Data.Vector.Unboxed as VU
+import DataFrame.Operations.Permutation (shuffle, shuffledIndices)
 import System.Random (mkStdGen)
 import Test.HUnit (Test (..), assertEqual)
 
@@ -74,6 +76,21 @@ shuffleDifferentSeedIsDifferent =
                 (shuffled1 == shuffled2)
             )
 
+-- Test that ShuffleIndeces does not dorp, add, or repeat any index
+shuffleDoesNotAddOrDropIndices :: Test
+shuffleDoesNotAddOrDropIndices =
+    let
+        gen = mkStdGen 42
+        actual = (Set.fromList [0 .. 10])
+        computedVector = shuffledIndices gen 11
+        computed = (Set.fromList $ VU.toList $ shuffledIndices gen 11)
+     in
+        TestList
+            [ TestCase
+                (assertEqual "Indecis are not dropped or added" (VU.length computedVector) 11)
+            , TestCase (assertEqual "There are no repeated indecis" computed actual)
+            ]
+
 tests :: [Test]
 tests =
     [ TestLabel "shuffleShuffles" shuffleShuffles
@@ -81,4 +98,5 @@ tests =
     , TestLabel "shufflePreservesColumnNames" shufflePreservesColumnNames
     , TestLabel "shuffleSameSeedIsSameShuffle" shuffleSameSeedIsSameShuffle
     , TestLabel "shuffleDifferentSeedIsDifferent" shuffleDifferentSeedIsDifferent
+    , TestLabel "shuffleDoesNotAddOrDropIndices" shuffleDoesNotAddOrDropIndices
     ]
