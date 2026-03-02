@@ -620,83 +620,40 @@ zipColumns (OptionalColumn optcolumn) (OptionalColumn optother) = BoxedColumn (V
 
 -- | Merge two columns using `These`.
 mergeColumns :: Column -> Column -> Column
-mergeColumns (BoxedColumn column) (BoxedColumn other) = BoxedColumn (VG.zipWith These column other)
-mergeColumns (BoxedColumn column) (UnboxedColumn other) =
-    BoxedColumn
-        ( VB.generate
-            (min (VG.length column) (VG.length other))
-            (\i -> These (column VG.! i) (other VG.! i))
-        )
-mergeColumns (BoxedColumn column) (OptionalColumn other) =
-    BoxedColumn
-        ( VB.generate
-            (min (VG.length column) (VG.length other))
-            ( \i ->
-                if isNothing (other VG.! i)
-                    then This (column VG.! i)
-                    else These (column VG.! i) (fromJust $ other VG.! i)
-            )
-        )
-mergeColumns (UnboxedColumn column) (BoxedColumn other) =
-    BoxedColumn
-        ( VB.generate
-            (min (VG.length column) (VG.length other))
-            (\i -> These (column VG.! i) (other VG.! i))
-        )
-mergeColumns (UnboxedColumn column) (UnboxedColumn other) =
-    BoxedColumn
-        ( VB.generate
-            (min (VG.length column) (VG.length other))
-            (\i -> These (column VG.! i) (other VG.! i))
-        )
-mergeColumns (UnboxedColumn column) (OptionalColumn other) =
-    BoxedColumn
-        ( VB.generate
-            (min (VG.length column) (VG.length other))
-            ( \i ->
-                if isNothing (other VG.! i)
-                    then This (column VG.! i)
-                    else These (column VG.! i) (fromJust $ other VG.! i)
-            )
-        )
-mergeColumns (OptionalColumn column) (BoxedColumn other) =
-    BoxedColumn
-        ( VB.generate
-            (min (VG.length column) (VG.length other))
-            ( \i ->
-                if isNothing (column VG.! i)
-                    then That (other VG.! i)
-                    else These (fromJust $ column VG.! i) (other VG.! i)
-            )
-        )
-mergeColumns (OptionalColumn column) (UnboxedColumn other) =
-    BoxedColumn
-        ( VB.generate
-            (min (VG.length column) (VG.length other))
-            ( \i ->
-                if isNothing (column VG.! i)
-                    then That (other VG.! i)
-                    else These (fromJust $ column VG.! i) (other VG.! i)
-            )
-        )
-mergeColumns (OptionalColumn column) (OptionalColumn other) =
-    OptionalColumn
-        ( VB.generate
-            (min (VG.length column) (VG.length other))
-            ( \i ->
-                if isNothing (column VG.! i) && isNothing (other VG.! i)
-                    then Nothing
-                    else
-                        ( if isNothing (column VG.! i)
-                            then Just (That (fromJust $ other VG.! i))
-                            else
-                                ( if isNothing (other VG.! i)
-                                    then Just (This (fromJust $ column VG.! i))
-                                    else Just (These (fromJust $ column VG.! i) (fromJust $ other VG.! i))
-                                )
-                        )
-            )
-        )
+mergeColumns colA colB = case (colA, colB) of
+    (OptionalColumn c1, OptionalColumn c2) ->
+        OptionalColumn $ mkVec c1 c2 $ \v1 v2 ->
+            case (v1, v2) of
+                (Nothing, Nothing) -> Nothing
+                (Just x, Nothing) -> Just (This x)
+                (Nothing, Just y) -> Just (That y)
+                (Just x, Just y) -> Just (These x y)
+    (OptionalColumn c1, BoxedColumn c2) -> optReq c1 c2
+    (OptionalColumn c1, UnboxedColumn c2) -> optReq c1 c2
+    (BoxedColumn c1, OptionalColumn c2) -> reqOpt c1 c2
+    (UnboxedColumn c1, OptionalColumn c2) -> reqOpt c1 c2
+    (BoxedColumn c1, BoxedColumn c2) -> reqReq c1 c2
+    (BoxedColumn c1, UnboxedColumn c2) -> reqReq c1 c2
+    (UnboxedColumn c1, BoxedColumn c2) -> reqReq c1 c2
+    (UnboxedColumn c1, UnboxedColumn c2) -> reqReq c1 c2
+  where
+    mkVec c1 c2 combineElements =
+        VB.generate
+            (min (VG.length c1) (VG.length c2))
+            (\i -> combineElements (c1 VG.! i) (c2 VG.! i))
+    {-# INLINE mkVec #-}
+
+    reqReq c1 c2 = BoxedColumn $ mkVec c1 c2 These
+
+    reqOpt c1 c2 = BoxedColumn $ mkVec c1 c2 $ \v1 v2 ->
+        case v2 of
+            Nothing -> This v1
+            Just y -> These v1 y
+
+    optReq c1 c2 = BoxedColumn $ mkVec c1 c2 $ \v1 v2 ->
+        case v1 of
+            Nothing -> That v2
+            Just x -> These x v2
 {-# INLINE mergeColumns #-}
 
 -- | An internal, column version of zipWith.
