@@ -26,7 +26,7 @@ A fast, safe, and intuitive DataFrame library.
 ## Why use this DataFrame library?
 
 * Encourages concise, declarative, and composable data pipelines.
-* Static typing makes code easier to reason about and catches many bugs at compile time—before your code ever runs.
+* Lets you opt into your preferred level of type safety: keep it lightweight for rapid exploration or lock it down completely for robust production pipelines.
 * Delivers high performance thanks to Haskell’s optimizing compiler and efficient memory model.
 * Designed for interactivity: expressive syntax, helpful error messages, and sensible defaults.
 * Works seamlessly in both command-line and notebook environments—great for exploration and scripting alike.
@@ -37,7 +37,7 @@ A fast, safe, and intuitive DataFrame library.
 - Interactive REPL for data exploration and plotting.
 
 ## Quick start
-Browse through some examples in [binder](https://mybinder.org/v2/gh/mchav/ihaskell-dataframe/HEAD) or in our [playground](https://ulwazi-exh9dbh2exbzgbc9.westus-01.azurewebsites.net/lab).
+Browse through some examples in [binder](https://mybinder.org/v2/gh/mchav/ihaskell-dataframe/HEAD).
 
 ## Install
 See the [Quick Start](https://dataframe.readthedocs.io/en/latest/quick_start.html) guide for setup and installation instructions.

@@ -3,8 +3,7 @@
 ## Jupyter
 
 ### Online
-* Try out our [playground](https://ulwazi-exh9dbh2exbzgbc9.westus-01.azurewebsites.net/lab?)
-* Or similarly, try out `dataframe` on [binder](https://mybinder.org/v2/gh/mchav/ihaskell-dataframe/HEAD).
+* Try out `dataframe` on [binder](https://mybinder.org/v2/gh/mchav/ihaskell-dataframe/HEAD).
 
 ### Run locally from docker
 * Clone the [ihaskell-dataframe repository](https://github.com/mchav/ihaskell-dataframe/).

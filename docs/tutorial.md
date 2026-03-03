@@ -13,7 +13,6 @@ By the end of this tutorial you will have:
 - written results back out to CSV
 
 We'll be using a notebook for this tutorial. So load up a notebook interface anyway you prefer:
-* through the [datahaskell playground](https://ulwazi-exh9dbh2exbzgbc9.westus-01.azurewebsites.net/lab?).
 * through [binder](https://mybinder.org/v2/gh/mchav/ihaskell-dataframe/HEAD) - this takes some time to load/build the environment.
 * Or you can run the docker image locally by following the QuickStart instructions.
 
