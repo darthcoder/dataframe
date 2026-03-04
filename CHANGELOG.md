@@ -1,5 +1,10 @@
 # Revision history for dataframe
 
+## 0.6.0.0
+* New typed API see https://dataframe.readthedocs.io/en/latest/using_dataframe_in_a_standalone_script.html
+* Faster joins
+* Fine grained parquet reads using `readParquetFilesWithOpts`.
+
 ## 0.5.0.0
 * SortOrder now takes an expression rather than a string.
 * selectBy now respects the original column order.

@@ -1,6 +1,6 @@
 cabal-version:      2.4
 name:               dataframe
-version:            0.5.0.1
+version:            0.6.0.0
 
 synopsis: A fast, safe, and intuitive DataFrame library.
 
