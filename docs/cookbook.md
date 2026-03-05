@@ -414,6 +414,152 @@ dataframe|   "./data/mtcars.parquet"
 
 When `selectedColumns` is set, columns referenced by `predicate` are automatically read as needed, then projected back to the requested output columns.
 
+**Exercise 14: using the typed API**
+_This problem is called "Interviews" in Hackerrank.
+Samantha interviews many candidates from different colleges using coding challenges and contests. Write a query to print the contest_id, hacker_id, name, and the sums of total_submissions, total_accepted_submissions, total_views, and total_unique_views for each contest sorted by contest_id. Exclude the contest from the result if all four sums are 0.
+
+### Solution
+
+#### SQL
+
+```SQL
+WITH interviews
+AS (
+ SELECT con.contest_id AS contest_id
+  ,con.hacker_id AS hacker_id
+  ,con.name AS name
+  ,ISNULL(ss.total_submissions, 0) total_submissions
+  ,ISNULL(ss.total_accepted_submissions, 0) total_accepted_submissions
+  ,ISNULL(vs.total_views, 0) total_views
+  ,ISNULL(vs.total_unique_views, 0) total_unique_views
+ FROM contests con
+ JOIN colleges col ON con.contest_id = col.contest_id
+ JOIN challenges cha ON col.college_id = cha.college_id
+ LEFT JOIN (
+  SELECT challenge_id
+   ,sum(total_views) AS total_views
+   ,sum(total_unique_views) AS total_unique_views
+  FROM view_stats
+  GROUP BY challenge_id
+  ) vs ON cha.challenge_id = vs.challenge_id
+ LEFT JOIN (
+  SELECT challenge_id
+   ,sum(total_submissions) AS total_submissions
+   ,sum(total_accepted_submissions) AS total_accepted_submissions
+  FROM submission_stats
+  GROUP BY challenge_id
+  ) ss ON cha.challenge_id = ss.challenge_id
+ )
+SELECT contest_id
+ ,hacker_id
+ ,name
+ ,sum(total_submissions)
+ ,sum(total_accepted_submissions)
+ ,sum(total_views)
+ ,sum(total_unique_views)
+FROM interviews
+GROUP BY contest_id
+ ,hacker_id
+ ,name
+HAVING sum(total_submissions) + sum(total_accepted_submissions) + 
+sum(total_views) + sum(total_unique_views) > 0
+ORDER BY contest_id;
+```
+
+#### Haskell
+
+```haskell
+#!/usr/bin/env cabal
+{- cabal:
+  build-depends: base >= 4, dataframe
+-}
+
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
+
+module Main where
+
+import qualified DataFrame as D
+import qualified DataFrame.Functions as F
+import qualified DataFrame.Typed as DT
+
+import DataFrame.Operators ((|>))
+import DataFrame.Typed ((.>.))
+
+$(DT.deriveSchemaFromCsvFile "Challenges" "./data/challenges_table.csv")
+$(DT.deriveSchemaFromCsvFile "Colleges" "./data/colleges_table.csv")
+$(DT.deriveSchemaFromCsvFile "Contests" "./data/contests.csv")
+$(DT.deriveSchemaFromCsvFile "Submissions" "./data/submission_stats_table.csv")
+$(DT.deriveSchemaFromCsvFile "Views" "./data/view_stats_table.csv")
+
+main :: IO ()
+main = do
+    challenges' <-
+        either (error . show) id . DT.freezeWithError @Challenges
+            <$> D.readCsv "./data/challenges_table.csv"
+    colleges' <-
+        either (error . show) id . DT.freezeWithError @Colleges
+            <$> D.readCsv "./data/colleges_table.csv"
+    contests' <-
+        either (error . show) id . DT.freezeWithError @Contests
+            <$> D.readCsv "./data/contests.csv"
+    submissions' <-
+        either (error . show) id . DT.freezeWithError @Submissions
+            <$> D.readCsv "./data/submission_stats_table.csv"
+    views' <-
+        either (error . show) id . DT.freezeWithError @Views
+            <$> D.readCsv "./data/view_stats_table.csv"
+
+    let contestsWithColleges =
+            contests'
+                |> flip (DT.innerJoin @'["contest_id"]) colleges'
+                |> flip (DT.innerJoin @'["college_id"]) challenges'
+
+    let submissionTotals =
+            submissions'
+                |> DT.groupBy @'["challenge_id"]
+                |> DT.aggregate
+                    ( DT.aggNil
+                        |> DT.agg @"total_submissions" (DT.sum (DT.col @"total_submissions"))
+                        |> DT.agg @"total_accepted_submissions"
+                            (DT.sum (DT.col @"total_accepted_submissions"))
+                    )
+    let viewTotals =
+            views'
+                |> DT.groupBy @'["challenge_id"]
+                |> DT.aggregate
+                    ( DT.aggNil
+                        |> DT.agg @"total_views" (DT.sum (DT.col @"total_views"))
+                        |> DT.agg @"total_unique_views" (DT.sum (DT.col @"total_unique_views"))
+                    )
+    print $
+        contestsWithColleges
+            |> flip (DT.leftJoin @'["challenge_id"]) viewTotals
+            |> flip (DT.leftJoin @'["challenge_id"]) submissionTotals
+            |> DT.select
+                @'[ "contest_id"
+                  , "hacker_id"
+                  , "name"
+                  , "total_submissions"
+                  , "total_accepted_submissions"
+                  , "total_views"
+                  , "total_unique_views"
+                  ]
+            |> DT.impute @"total_unique_views" (0 :: Int)
+            |> DT.impute @"total_views" (0 :: Int)
+            |> DT.impute @"total_submissions" (0 :: Int)
+            |> DT.impute @"total_accepted_submissions" (0 :: Int)
+            |> DT.filterWhere
+                ( DT.col @"total_unique_views"
+                    + DT.col @"total_views"
+                    + DT.col @"total_submissions"
+                    + DT.col @"total_accepted_submissions" .>. DT.lit 0
+                )
+```
+
 ## Summary
 
 You've now learned the fundamental operations for working with dataframes in Haskell:
@@ -425,5 +571,6 @@ You've now learned the fundamental operations for working with dataframes in Has
 - **Sorting** with `sortBy` and combining results with `<>`
 - **Applying custom functions** with `F.lift` for sophisticated data manipulation
 - **Reading Parquet with options** using `readParquetWithOpts` for projection, predicate filtering, and row ranges
+- **Typed API** using `DataFrame.Typed` to create typesafe pipelines.
 
 These building blocks can be composed together to answer complex data analysis questions in a clear, functional style.
