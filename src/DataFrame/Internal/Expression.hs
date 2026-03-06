@@ -132,7 +132,7 @@ instance (Fractional a, Columnable a) => Fractional (Expr a) where
                 { binaryFn = (/)
                 , binaryName = "divide"
                 , binarySymbol = Just "/"
-                , binaryCommutative = True
+                , binaryCommutative = False
                 , binaryPrecedence = 7
                 }
             )
