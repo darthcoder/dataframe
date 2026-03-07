@@ -318,6 +318,27 @@ eval ctx expr@(Agg (FoldAgg _ (Just seed) (f :: a -> b -> a)) inner) =
                 Flat . fromVector
                     <$> V.mapM (foldlColumn @b @a f seed) gs
 
+-- Aggregation: MergeAgg --------------------------------------------------
+
+eval
+    ctx
+    expr@( Agg
+                (MergeAgg _ seed (step :: acc -> b -> acc) _ (finalize :: acc -> a))
+                (inner :: Expr b)
+            ) =
+        addContext expr $ do
+            v <- eval @b ctx inner
+            case v of
+                Scalar _ ->
+                    Left $
+                        InternalException
+                            "Cannot apply a merge aggregation to a scalar"
+                Flat col ->
+                    Scalar . finalize <$> foldlColumnWith @b step seed col
+                Group gs ->
+                    Flat . fromVector
+                        <$> V.mapM (fmap finalize . foldlColumnWith @b step seed) gs
+
 -- Aggregation: FoldAgg without seed (fold1) ------------------------------
 
 eval ctx expr@(Agg (FoldAgg _ Nothing (f :: a -> b -> a)) inner) =

@@ -94,6 +94,7 @@ import DataFrame.Internal.Expression (
     AggStrategy (..),
     BinaryOp (..),
     Expr (..),
+    MeanAcc (..),
     NamedExpr,
     UExpr (..),
     UnaryOp (..),
@@ -233,11 +234,22 @@ not (TExpr e) = TExpr (Unary (MkUnaryOp Prelude.not "not" (Just "!")) e)
 sum :: (Columnable a, Num a) => TExpr cols a -> TExpr cols a
 sum (TExpr e) = TExpr (Agg (FoldAgg "sum" Nothing (+)) e)
 
-mean :: (Columnable a, Real a, VU.Unbox a) => TExpr cols a -> TExpr cols Double
-mean (TExpr e) = TExpr (Agg (CollectAgg "mean" mean') e)
+mean :: (Columnable a, Real a) => TExpr cols a -> TExpr cols Double
+mean (TExpr e) =
+    TExpr
+        ( Agg
+            ( MergeAgg
+                "mean"
+                (MeanAcc 0.0 0)
+                (\(MeanAcc s c) x -> MeanAcc (s + realToFrac x) (c + 1))
+                (\(MeanAcc s1 c1) (MeanAcc s2 c2) -> MeanAcc (s1 + s2) (c1 + c2))
+                (\(MeanAcc s c) -> if c == 0 then 0 / 0 else s / fromIntegral c)
+            )
+            e
+        )
 
 count :: (Columnable a) => TExpr cols a -> TExpr cols Int
-count (TExpr e) = TExpr (Agg (FoldAgg "count" (Just 0) (\acc _ -> acc + 1)) e)
+count (TExpr e) = TExpr (Agg (MergeAgg "count" (0 :: Int) (\c _ -> c + 1) (+) id) e)
 
 minimum :: (Columnable a, Ord a) => TExpr cols a -> TExpr cols a
 minimum (TExpr e) = TExpr (Agg (FoldAgg "minimum" Nothing min) e)

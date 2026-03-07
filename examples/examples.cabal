@@ -81,6 +81,7 @@ executable chipotle
                       bytestring-lexing >= 0.5 && < 0.6,
                       cassava >= 0.1 && < 1,
                       containers >= 0.6.7 && < 0.9,
+                      deepseq >= 1 && < 2,
                       directory >= 1.3.0.0 && < 2,
                       granite ^>= 0.4,
                       hashable >= 1.2 && < 2,
@@ -170,6 +171,7 @@ executable california_housing
                       bytestring-lexing >= 0.5 && < 0.6,
                       cassava >= 0.1 && < 1,
                       containers >= 0.6.7 && < 0.9,
+                      deepseq >= 1 && < 2,
                       directory >= 1.3.0.0 && < 2,
                       granite ^>= 0.4,
                       hashable >= 1.2 && < 2,
@@ -200,6 +202,7 @@ executable california_housing
 
 executable one_billion_row_challenge
     main-is:       OneBillionRowChallenge.hs
+    ghc-options:   -O2 -threaded -rtsopts -with-rtsopts=-N
     default-extensions: Strict
     other-modules: DataFrame,
                     DataFrame.Lazy,
@@ -272,6 +275,7 @@ executable one_billion_row_challenge
                       bytestring-lexing >= 0.5 && < 0.6,
                       cassava >= 0.1 && < 1,
                       containers >= 0.6.7 && < 0.9,
+                      deepseq >= 1 && < 2,
                       directory >= 1.3.0.0 && < 2,
                       granite ^>= 0.4,
                       hashable >= 1.2 && < 2,
@@ -395,6 +399,7 @@ executable iris
                       bytestring-lexing >= 0.5 && < 0.6,
                       cassava >= 0.1 && < 1,
                       containers >= 0.6.7 && < 0.9,
+                      deepseq >= 1 && < 2,
                       directory >= 1.3.0.0 && < 2,
                       granite ^>= 0.4,
                       hashable >= 1.2 && < 2,

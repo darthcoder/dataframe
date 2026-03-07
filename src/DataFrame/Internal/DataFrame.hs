@@ -13,6 +13,7 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 
+import Control.DeepSeq (NFData (..), rnf)
 import Control.Exception (throw)
 import Data.Function (on)
 import Data.List (sortBy, transpose, (\\))
@@ -35,6 +36,10 @@ data DataFrame = DataFrame
     -- ^ (rows, columns)
     , derivingExpressions :: M.Map T.Text UExpr
     }
+
+instance NFData DataFrame where
+    rnf (DataFrame cols idx dims _exprs) =
+        rnf cols `seq` rnf idx `seq` rnf dims
 
 {- | A record that contains information about how and what
 rows are grouped in the dataframe. This can only be used with

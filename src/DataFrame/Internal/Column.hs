@@ -27,6 +27,7 @@ import qualified Data.Vector.Mutable as VBM
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector.Unboxed.Mutable as VUM
 
+import Control.DeepSeq (NFData (..), rnf)
 import Control.Exception (throw)
 import Control.Monad.ST (runST)
 import Data.Kind (Type)
@@ -125,6 +126,11 @@ columnTypeString column = case column of
 instance (Show a) => Show (TypedColumn a) where
     show :: (Show a) => TypedColumn a -> String
     show (TColumn col) = show col
+
+instance NFData Column where
+    rnf (BoxedColumn (v :: VB.Vector a)) = rnf v
+    rnf (UnboxedColumn v) = v `seq` ()
+    rnf (OptionalColumn (v :: VB.Vector (Maybe a))) = rnf v
 
 instance Show Column where
     show :: Column -> String
@@ -532,6 +538,50 @@ foldlColumn f acc c@(UnboxedColumn (column :: VU.Vector d)) = case testEquality 
                     , errorColumnName = Nothing
                     }
                 )
+
+foldlColumnWith ::
+    forall a b.
+    (Columnable a) =>
+    (b -> a -> b) -> b -> Column -> Either DataFrameException b
+foldlColumnWith f acc (BoxedColumn (column :: VB.Vector d)) =
+    case testEquality (typeRep @a) (typeRep @d) of
+        Just Refl -> pure $ VG.foldl' f acc column
+        Nothing ->
+            Left $
+                TypeMismatchException
+                    ( MkTypeErrorContext
+                        { userType = Right (typeRep @a)
+                        , expectedType = Right (typeRep @d)
+                        , callingFunctionName = Just "foldlColumnWith"
+                        , errorColumnName = Nothing
+                        }
+                    )
+foldlColumnWith f acc (OptionalColumn (column :: VB.Vector d)) =
+    case testEquality (typeRep @a) (typeRep @d) of
+        Just Refl -> pure $ VG.foldl' f acc column
+        Nothing ->
+            Left $
+                TypeMismatchException
+                    ( MkTypeErrorContext
+                        { userType = Right (typeRep @a)
+                        , expectedType = Right (typeRep @d)
+                        , callingFunctionName = Just "foldlColumnWith"
+                        , errorColumnName = Nothing
+                        }
+                    )
+foldlColumnWith f acc (UnboxedColumn (column :: VU.Vector d)) =
+    case testEquality (typeRep @a) (typeRep @d) of
+        Just Refl -> pure $ VG.foldl' f acc column
+        Nothing ->
+            Left $
+                TypeMismatchException
+                    ( MkTypeErrorContext
+                        { userType = Right (typeRep @a)
+                        , expectedType = Right (typeRep @d)
+                        , callingFunctionName = Just "foldlColumnWith"
+                        , errorColumnName = Nothing
+                        }
+                    )
 
 foldl1Column ::
     forall a.

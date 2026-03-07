@@ -60,7 +60,7 @@ scanCsv :: Schema -> T.Text -> LazyDataFrame
 scanCsv schema path =
     LazyDataFrame
         { plan = Scan (CsvSource (T.unpack path) ',') schema
-        , batchSize = 512_000
+        , batchSize = 1_000_000
         }
 
 -- | Scan a character-separated file.
@@ -68,7 +68,7 @@ scanSeparated :: Char -> Schema -> T.Text -> LazyDataFrame
 scanSeparated sep schema path =
     LazyDataFrame
         { plan = Scan (CsvSource (T.unpack path) sep) schema
-        , batchSize = 512_000
+        , batchSize = 1_000_000
         }
 
 -- | Add a computed column (or overwrite an existing one).

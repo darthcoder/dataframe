@@ -1,3 +1,6 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,8 +10,9 @@
 
 Each operator returns a 'Stream' — an IO action that produces the next
 'DataFrame' batch on each call and returns 'Nothing' when exhausted.
-Blocking operators (Sort, HashAggregate, HashJoin) materialise their input
-before producing output.
+Blocking operators (Sort, HashJoin) materialise their input before producing
+output.  HashAggregate uses streaming partial aggregation when all aggregate
+expressions support it.
 -}
 module DataFrame.Lazy.Internal.Executor (
     ExecutorConfig (..),
@@ -19,8 +23,13 @@ module DataFrame.Lazy.Internal.Executor (
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TBQueue (newTBQueueIO, readTBQueue, writeTBQueue)
+import Control.DeepSeq (force)
+import Control.Exception (evaluate)
+import qualified Data.ByteString as BS
 import Data.IORef
 import qualified Data.Text as T
+import Data.Type.Equality (TestEquality (testEquality), type (:~:) (Refl))
+import qualified DataFrame.Internal.Column as C
 import qualified DataFrame.Internal.DataFrame as D
 import qualified DataFrame.Internal.Expression as E
 import qualified DataFrame.Lazy.IO.Binary as Bin
@@ -35,6 +44,7 @@ import qualified DataFrame.Operations.Permutation as Perm
 import qualified DataFrame.Operations.Subset as Sub
 import qualified DataFrame.Operations.Transformations as Trans
 import System.IO (hClose)
+import Type.Reflection (typeRep)
 
 -- ---------------------------------------------------------------------------
 -- Configuration
@@ -52,7 +62,7 @@ defaultExecutorConfig =
     ExecutorConfig
         { memoryBudgetBytes = 512 * 1_048_576 -- 512 MiB
         , spillDirectory = "/tmp"
-        , defaultBatchSize = 512_000
+        , defaultBatchSize = 1_000_000
         }
 
 -- ---------------------------------------------------------------------------
@@ -159,18 +169,49 @@ buildStream (PhysicalSort cols child) execCfg = do
             writeIORef ref Nothing
             return mb
         )
--- HashAggregate (blocking) ---------------------------------------------------
+-- HashAggregate --------------------------------------------------------------
 buildStream (PhysicalHashAggregate keys aggs child) execCfg = do
-    df <- execute child execCfg
-    let grouped = Agg.groupBy keys df
-    let result = Agg.aggregate aggs grouped
-    ref <- newIORef (Just result)
-    return . Stream $
-        ( do
-            mb <- readIORef ref
-            writeIORef ref Nothing
-            return mb
-        )
+    childStream <- buildStream child execCfg
+    if all (isStreamableAgg . snd) aggs
+        then do
+            -- Streaming partial aggregation: O(|groups|) memory
+            let (partialAggs, mergeAggs, finalizer) = buildAggPlan aggs
+            accRef <- newIORef (Nothing :: Maybe D.DataFrame)
+            let loop = do
+                    mb <- pullBatch childStream
+                    case mb of
+                        Nothing -> return ()
+                        Just batch -> do
+                            -- Force to NF so the batch DataFrame can be GC'd immediately.
+                            -- evaluate . force breaks the thunk chain that would otherwise
+                            -- keep every batch (~60 MB each) alive until the end = OOM.
+                            !partial <-
+                                evaluate . force $ Agg.aggregate partialAggs (Agg.groupBy keys batch)
+                            mAcc <- readIORef accRef
+                            !newAcc <- case mAcc of
+                                Nothing -> return partial
+                                Just acc ->
+                                    evaluate . force $
+                                        Agg.aggregate mergeAggs $
+                                            Agg.groupBy keys (acc <> partial)
+                            writeIORef accRef (Just newAcc)
+                            loop
+            loop
+            mFinal <- fmap (fmap finalizer) (readIORef accRef)
+            ref <- newIORef mFinal
+            return . Stream $ do
+                mb <- readIORef ref
+                writeIORef ref Nothing
+                return mb
+        else do
+            -- Fallback: materialise entire child (for CollectAgg etc.)
+            df <- collectStream childStream
+            let result = Agg.aggregate aggs (Agg.groupBy keys df)
+            ref <- newIORef (Just result)
+            return . Stream $ do
+                mb <- readIORef ref
+                writeIORef ref Nothing
+                return mb
 -- HashJoin (blocking on both sides) ------------------------------------------
 buildStream (PhysicalHashJoin jt leftKey rightKey leftPlan rightPlan) execCfg = do
     leftDf <- execute leftPlan execCfg
@@ -197,18 +238,150 @@ buildStream (PhysicalSortMergeJoin jt leftKey rightKey leftPlan rightPlan) execC
         )
 
 -- ---------------------------------------------------------------------------
+-- Streaming aggregation helpers
+-- ---------------------------------------------------------------------------
+
+{- | True when an aggregate expression can be computed incrementally
+(i.e., partial results can be merged without materialising all rows).
+-}
+isStreamableAgg :: E.UExpr -> Bool
+isStreamableAgg (E.UExpr (E.Agg (E.CollectAgg _ _) _)) = False
+isStreamableAgg (E.UExpr (E.Agg (E.FoldAgg _ Nothing (_ :: a -> b -> a)) _)) =
+    case testEquality (typeRep @a) (typeRep @b) of
+        Just Refl -> True -- self-merging: min, max, sum
+        Nothing -> False
+isStreamableAgg (E.UExpr (E.Agg (E.FoldAgg _ (Just _) (_ :: a -> b -> a)) _)) =
+    case testEquality (typeRep @a) (typeRep @Int) of
+        Just Refl -> True -- seeded Int fold (old-style count): merge by sum
+        Nothing ->
+            case testEquality (typeRep @a) (typeRep @b) of
+                Just Refl -> True -- seeded self-merging
+                Nothing -> False
+isStreamableAgg (E.UExpr (E.Agg (E.MergeAgg{}) _)) = True
+isStreamableAgg _ = False
+
+{- | Build the partial, merge, and finalizer plan for a list of streamable
+aggregate expressions.
+
+* @partialAggs@  — applied per batch, producing one row per group
+* @mergeAggs@    — applied when combining two partial-result DataFrames
+* @finalizer@    — post-process after all batches (needed for 'MergeAgg'
+                   where the accumulator type differs from the output type)
+-}
+buildAggPlan ::
+    [(T.Text, E.UExpr)] ->
+    ( [(T.Text, E.UExpr)]
+    , [(T.Text, E.UExpr)]
+    , D.DataFrame -> D.DataFrame
+    )
+buildAggPlan aggs = foldl combine ([], [], id) (map processAgg aggs)
+  where
+    combine (p1, m1, f1) (p2, m2, f2) = (p1 ++ p2, m1 ++ m2, f1 . f2)
+
+    processAgg ::
+        (T.Text, E.UExpr) ->
+        ([(T.Text, E.UExpr)], [(T.Text, E.UExpr)], D.DataFrame -> D.DataFrame)
+    processAgg (name, ue) = case ue of
+        -- Seedless FoldAgg: min, max, sum (self-merging when a = b)
+        E.UExpr (E.Agg (E.FoldAgg n Nothing (f :: a -> b -> a)) (_ :: E.Expr b)) ->
+            case testEquality (typeRep @a) (typeRep @b) of
+                Just Refl ->
+                    ( [(name, ue)]
+                    , [(name, E.UExpr (E.Agg (E.FoldAgg n Nothing f) (E.Col @a name)))]
+                    , id
+                    )
+                Nothing ->
+                    -- a /= b but a = Int: merge by sum (backward compat)
+                    case testEquality (typeRep @a) (typeRep @Int) of
+                        Just Refl ->
+                            ( [(name, ue)]
+                            ,
+                                [
+                                    ( name
+                                    , E.UExpr
+                                        (E.Agg (E.FoldAgg "sum" Nothing ((+) :: Int -> Int -> Int)) (E.Col @Int name))
+                                    )
+                                ]
+                            , id
+                            )
+                        Nothing -> ([(name, ue)], [(name, ue)], id)
+        -- Seeded FoldAgg: old-style count (a = Int)
+        E.UExpr (E.Agg (E.FoldAgg n (Just _) (f :: a -> b -> a)) (_ :: E.Expr b)) ->
+            case testEquality (typeRep @a) (typeRep @Int) of
+                Just Refl ->
+                    ( [(name, ue)]
+                    ,
+                        [
+                            ( name
+                            , E.UExpr
+                                (E.Agg (E.FoldAgg "sum" Nothing ((+) :: Int -> Int -> Int)) (E.Col @Int name))
+                            )
+                        ]
+                    , id
+                    )
+                Nothing ->
+                    case testEquality (typeRep @a) (typeRep @b) of
+                        Just Refl ->
+                            ( [(name, ue)]
+                            , [(name, E.UExpr (E.Agg (E.FoldAgg n Nothing f) (E.Col @a name)))]
+                            , id
+                            )
+                        Nothing -> ([(name, ue)], [(name, ue)], id)
+        -- MergeAgg: count, mean, etc.
+        -- Partial step: accumulate into acc type (using id as finalizer).
+        -- Merge step: apply merge function to two acc-typed partial results.
+        -- Finalizer: apply fin to convert acc column to output type.
+        E.UExpr
+            ( E.Agg
+                    ( E.MergeAgg
+                            n
+                            seed
+                            (step :: acc -> b -> acc)
+                            (merge :: acc -> acc -> acc)
+                            (fin :: acc -> a)
+                        )
+                    (inner :: E.Expr b)
+                ) ->
+                let partialExpr =
+                        E.UExpr
+                            ( E.Agg
+                                (E.MergeAgg n seed step merge (id :: acc -> acc))
+                                inner
+                            )
+                    mergeExpr =
+                        E.UExpr
+                            ( E.Agg
+                                (E.FoldAgg ("merge_" <> n) Nothing merge)
+                                (E.Col @acc name)
+                            )
+                    finalize df =
+                        let accCol = D.unsafeGetColumn name df
+                            finalCol =
+                                either
+                                    (error "buildAggPlan: MergeAgg finalize failed")
+                                    id
+                                    (C.mapColumn @acc @a fin accCol)
+                         in Core.insertColumn name finalCol df
+                 in ( [(name, partialExpr)]
+                    , [(name, mergeExpr)]
+                    , finalize
+                    )
+        _ -> ([(name, ue)], [(name, ue)], id)
+
+-- ---------------------------------------------------------------------------
 -- CSV scan implementation
 -- ---------------------------------------------------------------------------
 
 {- | CSV scan with pipeline parallelism: a dedicated reader thread fills a
 bounded queue while the caller's thread applies pushdown predicates and
-delivers batches to the rest of the pipeline.  The queue depth of 2 keeps
-at most two raw batches in flight, bounding memory while hiding I/O latency.
+delivers batches to the rest of the pipeline.  The queue depth of 8 keeps
+at most eight raw batches in flight, bounding memory while hiding I/O latency.
 -}
 executeCsvScan :: FilePath -> Char -> ScanConfig -> IO Stream
 executeCsvScan path sep cfg = do
     (handle, colSpec) <- LCSV.openCsvStream sep (scanSchema cfg) path
     -- Queue carries raw batches; Nothing is the end-of-stream sentinel.
+    -- Depth 2: each batch holds ~60 MB (1M Text + Double columns); 8 would be ~480 MB.
     queue <- newTBQueueIO 2
     _ <- forkIO $ do
         let loop lo = do
@@ -218,7 +391,7 @@ executeCsvScan path sep cfg = do
                         hClose handle >> atomically (writeTBQueue queue Nothing)
                     Just (df, lo') ->
                         atomically (writeTBQueue queue (Just df)) >> loop lo'
-        loop ""
+        loop BS.empty
     return . Stream $
         ( do
             mb <- atomically (readTBQueue queue)

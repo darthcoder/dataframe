@@ -138,7 +138,7 @@ not =
         (MkUnaryOp{unaryFn = Prelude.not, unaryName = "not", unarySymbol = Just "~"})
 
 count :: (Columnable a) => Expr a -> Expr Int
-count = Agg (FoldAgg "count" (Just 0) (\acc _ -> acc + 1))
+count = Agg (MergeAgg "count" (0 :: Int) (\c _ -> c + 1) (+) id)
 
 collect :: (Columnable a) => Expr a -> Expr [a]
 collect = Agg (FoldAgg "collect" (Just []) (flip (:)))
@@ -170,11 +170,16 @@ sum = Agg (FoldAgg "sum" Nothing (+))
 sumMaybe :: forall a. (Columnable a, Num a) => Expr (Maybe a) -> Expr a
 sumMaybe = Agg (CollectAgg "sumMaybe" (P.sum . Maybe.catMaybes . V.toList))
 
-mean :: (Columnable a, Real a, VU.Unbox a) => Expr a -> Expr Double
-mean = Agg (CollectAgg "mean" mean')
-{-# SPECIALIZE DataFrame.Functions.mean :: Expr Double -> Expr Double #-}
-{-# SPECIALIZE DataFrame.Functions.mean :: Expr Int -> Expr Double #-}
-{-# INLINEABLE DataFrame.Functions.mean #-}
+mean :: (Columnable a, Real a) => Expr a -> Expr Double
+mean =
+    Agg
+        ( MergeAgg
+            "mean"
+            (MeanAcc 0.0 0)
+            (\(MeanAcc s c) x -> MeanAcc (s + realToFrac x) (c + 1))
+            (\(MeanAcc s1 c1) (MeanAcc s2 c2) -> MeanAcc (s1 + s2) (c1 + c2))
+            (\(MeanAcc s c) -> if c == 0 then 0 / 0 else s / fromIntegral c)
+        )
 
 meanMaybe :: forall a. (Columnable a, Real a) => Expr (Maybe a) -> Expr Double
 meanMaybe = Agg (CollectAgg "meanMaybe" (mean' . optionalToDoubleVector))

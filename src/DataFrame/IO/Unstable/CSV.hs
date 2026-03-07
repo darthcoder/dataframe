@@ -7,6 +7,7 @@ module DataFrame.IO.Unstable.CSV (
     readCsvUnstable,
     fastReadTsvUnstable,
     readTsvUnstable,
+    getDelimiterIndices,
 ) where
 
 import qualified Data.Vector as Vector
@@ -195,30 +196,46 @@ getDelimiterIndices ::
 getDelimiterIndices separator originalLen csvFile =
     VS.unsafeWith csvFile $ \buffer -> do
         let paddedLen = VS.length csvFile
-        -- then number of delimiters cannot exceed the size
-        -- of the input array (which would be a series of
-        -- empty fields)
-        indices <- mallocArray paddedLen
+        -- GC-managed pinned memory: freed automatically, no leak in streaming use.
+        resultMV <- VSM.unsafeNew paddedLen
         num_fields <-
-            get_delimiter_indices
-                (castPtr buffer)
-                (fromIntegral paddedLen)
-                (fromIntegral separator)
-                (castPtr indices)
+            VSM.unsafeWith resultMV $ \indicesPtr ->
+                get_delimiter_indices
+                    (castPtr buffer)
+                    (fromIntegral paddedLen)
+                    (fromIntegral separator)
+                    (castPtr indicesPtr)
         if num_fields == -1
-            then getDelimiterIndices_ separator originalLen csvFile indices
-            else do
-                indices' <- newForeignPtr_ indices
-                let resultVector = VSM.unsafeFromForeignPtr0 indices' paddedLen
-                -- Handle the case where the file doesn't end with a newline
-                -- We need to add a final delimiter for the last field
-                finalResultLen <-
+            then do
+                -- Haskell state-machine fallback, writing directly into resultMV.
+                let trans = stateTransitionTable separator
+                    processChar (!state, !idx) i byte =
+                        case state of
+                            UnEscaped ->
+                                if byte == lf || byte == separator
+                                    then do
+                                        VSM.unsafeWrite resultMV idx (fromIntegral i)
+                                        return (toEnum (trans ! (fromEnum state, byte)), idx + 1)
+                                    else return (toEnum (trans ! (fromEnum state, byte)), idx)
+                            Escaped ->
+                                return (toEnum (trans ! (fromEnum state, byte)), idx)
+                (_, finalIdx) <- VS.ifoldM' processChar (UnEscaped, 0 :: Int) csvFile
+                finalLen <-
                     if originalLen > 0 && csvFile VS.! (originalLen - 1) /= lf
                         then do
-                            VSM.write resultVector (fromIntegral num_fields) (fromIntegral originalLen)
-                            return (fromIntegral num_fields + 1)
-                        else return (fromIntegral num_fields)
-                VS.unsafeFreeze $ VSM.slice 0 finalResultLen resultVector
+                            VSM.unsafeWrite resultMV finalIdx (fromIntegral originalLen)
+                            return (finalIdx + 1)
+                        else return finalIdx
+                VS.unsafeFreeze (VSM.slice 0 finalLen resultMV)
+            else do
+                let n = fromIntegral num_fields
+                finalLen <-
+                    if originalLen > 0 && csvFile VS.! (originalLen - 1) /= lf
+                        then do
+                            VSM.write resultMV n (fromIntegral originalLen)
+                            return (n + 1)
+                        else return n
+                VS.unsafeFreeze (VSM.slice 0 finalLen resultMV)
 
 -- We have a Native version in case the C version
 -- cannot be used. For example if neither ARM_NEON

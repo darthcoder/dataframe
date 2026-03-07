@@ -13,6 +13,7 @@
 
 module DataFrame.Internal.Expression where
 
+import Control.DeepSeq (NFData (..))
 import Data.String
 import qualified Data.Text as T
 import Data.Type.Equality (TestEquality (testEquality), type (:~:) (Refl))
@@ -34,10 +35,24 @@ data BinaryOp a b c = MkBinaryOp
     , binaryPrecedence :: Int
     }
 
+data MeanAcc = MeanAcc {-# UNPACK #-} !Double {-# UNPACK #-} !Int
+    deriving (Show, Eq, Ord, Read)
+
+instance NFData MeanAcc where
+    rnf (MeanAcc _ _) = ()
+
 data AggStrategy a b where
     CollectAgg ::
         (VG.Vector v b, Typeable v) => T.Text -> (v b -> a) -> AggStrategy a b
     FoldAgg :: T.Text -> Maybe a -> (a -> b -> a) -> AggStrategy a b
+    MergeAgg ::
+        (Columnable acc) =>
+        T.Text ->
+        acc ->
+        (acc -> b -> acc) ->
+        (acc -> acc -> acc) ->
+        (acc -> a) ->
+        AggStrategy a b
 
 data Expr a where
     Col :: (Columnable a) => T.Text -> Expr a
@@ -219,6 +234,7 @@ instance (Show a) => Show (Expr a) where
     show (Binary op a b) = "(" ++ T.unpack (binaryName op) ++ " " ++ show a ++ " " ++ show b ++ ")"
     show (Agg (CollectAgg op _) expr) = "(" ++ T.unpack op ++ " " ++ show expr ++ ")"
     show (Agg (FoldAgg op _ _) expr) = "(" ++ T.unpack op ++ " " ++ show expr ++ ")"
+    show (Agg (MergeAgg op _ _ _ _) expr) = "(" ++ T.unpack op ++ " " ++ show expr ++ ")"
 
 normalize :: (Eq a, Ord a, Show a, Typeable a) => Expr a -> Expr a
 normalize expr = case expr of
@@ -251,6 +267,7 @@ compareExpr e1 e2 = compare (exprKey e1) (exprKey e2)
     exprKey (Binary op e1 e2) = "4:" ++ T.unpack (binaryName op) ++ exprKey e1 ++ exprKey e2
     exprKey (Agg (CollectAgg name _) e) = "5:" ++ T.unpack name ++ exprKey e
     exprKey (Agg (FoldAgg name _ _) e) = "5:" ++ T.unpack name ++ exprKey e
+    exprKey (Agg (MergeAgg name _ _ _ _) e) = "5:" ++ T.unpack name ++ exprKey e
 
 instance (Eq a, Columnable a) => Eq (Expr a) where
     (==) l r = eqNormalized (normalize l) (normalize r)
@@ -270,6 +287,8 @@ instance (Eq a, Columnable a) => Eq (Expr a) where
             n1 == n2 && e1 `exprEq` e2
         eqNormalized (Agg (FoldAgg n1 _ _) e1) (Agg (FoldAgg n2 _ _) e2) =
             n1 == n2 && e1 `exprEq` e2
+        eqNormalized (Agg (MergeAgg n1 _ _ _ _) e1) (Agg (MergeAgg n2 _ _ _ _) e2) =
+            n1 == n2 && e1 `exprEq` e2
         eqNormalized _ _ = False
 
 instance (Ord a, Columnable a) => Ord (Expr a) where
@@ -284,6 +303,7 @@ instance (Ord a, Columnable a) => Ord (Expr a) where
             compare (binaryName op1) (binaryName op2) <> exprComp a1 a2 <> exprComp b1 b2
         (Agg (CollectAgg n1 _) e1', Agg (CollectAgg n2 _) e2') -> compare n1 n2 <> exprComp e1' e2'
         (Agg (FoldAgg n1 _ _) e1', Agg (FoldAgg n2 _ _) e2') -> compare n1 n2 <> exprComp e1' e2'
+        (Agg (MergeAgg n1 _ _ _ _) e1', Agg (MergeAgg n2 _ _ _ _) e2') -> compare n1 n2 <> exprComp e1' e2'
         -- Different constructors - compare by priority
         (Col _, _) -> LT
         (_, Col _) -> GT
@@ -372,3 +392,4 @@ prettyPrint = go 0 0
              in if prec > p then "(" ++ inner ++ ")" else inner
         Agg (CollectAgg op _) arg -> T.unpack op ++ "(" ++ go depth 0 arg ++ ")"
         Agg (FoldAgg op _ _) arg -> T.unpack op ++ "(" ++ go depth 0 arg ++ ")"
+        Agg (MergeAgg op _ _ _ _) arg -> T.unpack op ++ "(" ++ go depth 0 arg ++ ")"

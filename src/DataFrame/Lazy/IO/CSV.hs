@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
@@ -8,9 +9,11 @@
 
 module DataFrame.Lazy.IO.CSV where
 
+import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Proxy as P
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as TextEncoding
 import qualified Data.Text.IO as TIO
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
@@ -22,6 +25,7 @@ import Data.Char (intToDigit)
 import Data.IORef
 import Data.Maybe (fromMaybe, isJust)
 import Data.Type.Equality (TestEquality (testEquality))
+import Data.Word (Word8)
 import DataFrame.Internal.Column (
     Column (..),
     MutableColumn (..),
@@ -234,6 +238,7 @@ openCsvStream ::
     IO (Handle, [(Int, T.Text, SchemaType)])
 openCsvStream sep schema path = do
     handle <- openFile path ReadMode
+    hSetBuffering handle (BlockBuffering (Just (8 * 1024 * 1024)))
     headerLine <- TIO.hGetLine handle
     let headerCols = fmap (T.filter (/= '"') . T.strip) (parseSep sep headerLine)
     let schemaMap = elements schema
@@ -259,78 +264,141 @@ readBatch ::
     Char ->
     [(Int, T.Text, SchemaType)] ->
     Int ->
-    T.Text ->
+    BS.ByteString ->
     Handle ->
-    IO (Maybe (DataFrame, T.Text))
+    IO (Maybe (DataFrame, BS.ByteString))
 readBatch sep colSpec batchSz leftover handle = do
-    isEof <- hIsEOF handle
-    if isEof && T.null leftover
+    let sepByte = fromIntegral (fromEnum sep) :: Word8
+        numCols = length colSpec
+        -- Read in 8 MB chunks; only the partial-line tail is copied on refill.
+        chunkSize = 8 * 1024 * 1024
+    nullsArr <- VM.unsafeNew numCols
+    VM.set nullsArr []
+    mCols <- VM.unsafeNew numCols
+    forM_ (zip [0 ..] colSpec) $ \(ci, (_, _, st)) ->
+        VM.unsafeWrite mCols ci =<< makeCol batchSz st
+    -- buf holds unprocessed bytes; refilled on demand when no newline is found.
+    bufRef <- newIORef leftover
+    -- Row-by-row scan. When the buffer has no unquoted newline, fetch another chunk.
+    -- The copy on refill is only the partial-line tail (≤ one row ≈ few hundred bytes).
+    let loop !rowIdx = do
+            remaining <- readIORef bufRef
+            if rowIdx >= batchSz
+                then return (rowIdx, remaining)
+                else case findUnquotedNewline remaining of
+                    Nothing -> do
+                        chunk <- BS.hGet handle chunkSize
+                        if BS.null chunk
+                            then return (rowIdx, remaining) -- EOF
+                            else writeIORef bufRef (remaining <> chunk) >> loop rowIdx
+                    Just nlIdx -> do
+                        let line = BS.take nlIdx remaining
+                            rest' = BS.drop (nlIdx + 1) remaining
+                            line' =
+                                if not (BS.null line) && BS.last line == 0x0D
+                                    then BS.init line
+                                    else line
+                        writeIORef bufRef rest'
+                        forM_ (zip [0 ..] colSpec) $ \(ci, (fi, _, _)) -> do
+                            let fieldBs = getNthFieldBs sepByte fi line'
+                            col <- VM.unsafeRead mCols ci
+                            res <- writeColumnBs rowIdx fieldBs col
+                            case res of
+                                Left nv -> VM.unsafeModify nullsArr ((rowIdx, nv) :) ci
+                                Right _ -> return ()
+                        loop (rowIdx + 1)
+    (completeRows, newLeftover) <- loop 0
+    if completeRows == 0
         then return Nothing
         else do
-            let numCols = length colSpec
-            nullsArr <- VM.unsafeNew numCols
-            VM.set nullsArr []
-            mCols <- VM.unsafeNew numCols
-            forM_ (zip [0 ..] colSpec) $ \(ci, (_, _, st)) ->
-                VM.unsafeWrite mCols ci =<< makeCol batchSz st
-            leftoverRef <- newIORef leftover
-            rowCountRef <- newIORef (0 :: Int)
-            let loop = do
-                    rc <- readIORef rowCountRef
-                    when (rc < batchSz) $ do
-                        lo <- readIORef leftoverRef
-                        eof <- hIsEOF handle
-                        unless (eof && T.null lo) $ do
-                            parseWith (TIO.hGetChunk handle) (parseRow sep) lo >>= \case
-                                Fail _ ctx er ->
-                                    fail
-                                        ( "readBatch: parse error near row "
-                                            <> ( show rc
-                                                    <> ( ": "
-                                                            <> ( er
-                                                                    <> ( " ctx: "
-                                                                            ++ show ctx
-                                                                       )
-                                                               )
-                                                       )
-                                               )
-                                        )
-                                Partial _ -> fail "readBatch: unexpected Partial"
-                                Done rest row -> do
-                                    writeIORef leftoverRef rest
-                                    forM_ (zip [0 ..] colSpec) $ \(ci, (fi, _, _)) -> do
-                                        let val = if fi < length row then row !! fi else ""
-                                        col <- VM.unsafeRead mCols ci
-                                        res <- writeColumn rc val col
-                                        case res of
-                                            Left nv -> VM.unsafeModify nullsArr ((rc, nv) :) ci
-                                            Right _ -> return ()
-                                    modifyIORef' rowCountRef (+ 1)
-                                    loop
-            loop
-            actualRows <- readIORef rowCountRef
-            finalLeftover <- readIORef leftoverRef
-            if actualRows == 0
-                then return Nothing
-                else do
-                    forM_ [0 .. numCols - 1] $ \ci -> do
-                        col <- VM.unsafeRead mCols ci
-                        VM.unsafeWrite mCols ci (sliceCol actualRows col)
-                    nullsVec <- V.unsafeFreeze nullsArr
-                    cols <- V.generateM numCols $ \ci -> do
-                        col <- VM.unsafeRead mCols ci
-                        freezeColumn' (nullsVec V.! ci) col
-                    let colNames = [name | (_, name, _) <- colSpec]
-                    return $
-                        Just
-                            ( DataFrame
-                                { columns = cols
-                                , columnIndices = M.fromList (zip colNames [0 ..])
-                                , dataframeDimensions = (actualRows, numCols)
-                                , derivingExpressions = M.empty
-                                }
-                            , finalLeftover
-                            )
+            forM_ [0 .. numCols - 1] $ \ci -> do
+                col <- VM.unsafeRead mCols ci
+                VM.unsafeWrite mCols ci (sliceCol completeRows col)
+            nullsVec <- V.unsafeFreeze nullsArr
+            cols <- V.generateM numCols $ \ci -> do
+                col <- VM.unsafeRead mCols ci
+                freezeColumn' (nullsVec V.! ci) col
+            let colNames = [name | (_, name, _) <- colSpec]
+            return $
+                Just
+                    ( DataFrame
+                        { columns = cols
+                        , columnIndices = M.fromList (zip colNames [0 ..])
+                        , dataframeDimensions = (completeRows, numCols)
+                        , derivingExpressions = M.empty
+                        }
+                    , newLeftover
+                    )
+
+{- | Write a 'ByteString' field value directly into a mutable column,
+parsing numerics without an intermediate 'T.Text' allocation.
+-}
+writeColumnBs ::
+    Int -> BS.ByteString -> MutableColumn -> IO (Either T.Text Bool)
+writeColumnBs i bs (MBoxedColumn (col :: VM.IOVector a)) =
+    case testEquality (typeRep @a) (typeRep @T.Text) of
+        Just Refl ->
+            let val = TextEncoding.decodeUtf8Lenient bs
+             in if isNullish val
+                    then VM.unsafeWrite col i T.empty >> return (Left val)
+                    else VM.unsafeWrite col i val >> return (Right True)
+        Nothing -> return (Left (TextEncoding.decodeUtf8Lenient bs))
+writeColumnBs i bs (MUnboxedColumn (col :: VUM.IOVector a)) =
+    case testEquality (typeRep @a) (typeRep @Double) of
+        Just Refl -> case readByteStringDouble bs of
+            Just v -> VUM.unsafeWrite col i v >> return (Right True)
+            Nothing -> VUM.unsafeWrite col i 0 >> return (Left (TextEncoding.decodeUtf8Lenient bs))
+        Nothing -> case testEquality (typeRep @a) (typeRep @Int) of
+            Just Refl -> case readByteStringInt bs of
+                Just v -> VUM.unsafeWrite col i v >> return (Right True)
+                Nothing -> VUM.unsafeWrite col i 0 >> return (Left (TextEncoding.decodeUtf8Lenient bs))
+            Nothing -> return (Left (TextEncoding.decodeUtf8Lenient bs))
+{-# INLINE writeColumnBs #-}
+
+{- | Extracts the Nth field (0-indexed), respecting double quotes and stripping them.
+Fast path: uses memchr-based 'BS.break' when no quotes are present in the line.
+Slow path: quote-aware character-by-character scan.
+-}
+getNthFieldBs :: Word8 -> Int -> BS.ByteString -> BS.ByteString
+getNthFieldBs sep targetIdx bs
+    | not (BS.any (== 0x22) bs) = skipFast targetIdx bs
+    | otherwise = go 0 0 False 0
+  where
+    -- Fast path: skip fields using elemIndex (memchr); avoids pair allocation.
+    skipFast k s =
+        case BS.elemIndex sep s of
+            Nothing -> if k == 0 then s else BS.empty
+            Just i ->
+                if k == 0
+                    then BS.take i s
+                    else skipFast (k - 1) (BS.drop (i + 1) s)
+
+    -- Slow path: quote-aware scan.
+    quoteChar = 0x22 :: Word8
+    len = BS.length bs
+    go !idx !start !inQ !pos
+        | pos >= len =
+            if idx == targetIdx then extract start pos else BS.empty
+        | otherwise =
+            let c = BS.index bs pos
+             in if c == quoteChar
+                    then go idx start (not inQ) (pos + 1)
+                    else
+                        if c == sep && not inQ
+                            then
+                                if idx == targetIdx
+                                    then extract start pos
+                                    else go (idx + 1) (pos + 1) False (pos + 1)
+                            else go idx start inQ (pos + 1)
+
+    extract s e =
+        let field = BS.take (e - s) (BS.drop s bs)
+         in if BS.length field >= 2
+                && BS.head field == quoteChar
+                && BS.last field == quoteChar
+                then BS.init (BS.tail field)
+                else field
+{-# INLINE getNthFieldBs #-}
 
 -- | Allocate a fresh 'MutableColumn' for @n@ slots based on a 'SchemaType'.
 makeCol :: Int -> SchemaType -> IO MutableColumn
@@ -345,3 +413,31 @@ makeCol n (SType (_ :: P.Proxy a)) =
 sliceCol :: Int -> MutableColumn -> MutableColumn
 sliceCol n (MBoxedColumn col) = MBoxedColumn (VM.take n col)
 sliceCol n (MUnboxedColumn col) = MUnboxedColumn (VUM.take n col)
+
+{- | Finds the index of the next unquoted newline (0x0A).
+Fast path: uses memchr (SIMD) and falls back to a quote-aware linear scan
+only if a double-quote appears before the candidate newline.
+-}
+findUnquotedNewline :: BS.ByteString -> Maybe Int
+findUnquotedNewline bs =
+    case BS.elemIndex 0x0A bs of
+        Nothing -> Nothing
+        Just nlPos
+            -- No quote before the newline → safe to use this position.
+            -- Check with elemIndex to avoid allocating a ByteString slice.
+            | maybe True (>= nlPos) (BS.elemIndex 0x22 bs) -> Just nlPos
+            -- Quote present → may be a newline inside a quoted field; scan carefully.
+            | otherwise -> slowScan 0 False
+  where
+    len = BS.length bs
+    slowScan !pos !inQ
+        | pos >= len = Nothing
+        | otherwise =
+            let c = BS.index bs pos
+             in if c == 0x22
+                    then slowScan (pos + 1) (not inQ)
+                    else
+                        if c == 0x0A && not inQ
+                            then Just pos
+                            else slowScan (pos + 1) inQ
+{-# INLINE findUnquotedNewline #-}
