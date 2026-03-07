@@ -5,7 +5,6 @@
 import qualified DataFrame as D
 import qualified DataFrame.Functions as F
 
-import Control.DeepSeq (NFData (..), rwhnf)
 import Control.Monad (void)
 import Criterion.Main
 import Data.Text (Text)
@@ -18,27 +17,6 @@ import DataFrame.Operations.Join
 import DataFrame.Operators
 import System.Process hiding (env)
 import System.Random.Stateful
-
-{- | Column is a GADT with existential types. Columnable doesn't include NFData,
-  so we force evaluation manually per constructor:
-    - UnboxedColumn: backed by ByteArray, always in NF — seq suffices.
-    - BoxedColumn: force spine + each element to WHNF (sufficient for Int/Text).
-    - OptionalColumn: same as BoxedColumn but over Maybe values.
--}
-instance NFData Column where
-    rnf (UnboxedColumn v) = v `seq` ()
-    rnf (BoxedColumn v) = V.foldl' (\() x -> x `seq` ()) () v
-    rnf (OptionalColumn v) = V.foldl' (\() x -> x `seq` ()) () v
-
-{- | UExpr is a GADT wrapping Expr which contains functions and is not NFData-able.
-  derivingExpressions is empty for benchmark DataFrames, so WHNF is fine.
--}
-instance NFData UExpr where
-    rnf = rwhnf
-
-instance NFData DataFrame where
-    rnf (DataFrame cols idxs dims derivs) =
-        rnf cols `seq` rnf idxs `seq` rnf dims `seq` rnf derivs
 
 haskell :: IO ()
 haskell = do
