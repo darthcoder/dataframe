@@ -25,13 +25,17 @@ import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TBQueue (newTBQueueIO, readTBQueue, writeTBQueue)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
+import Control.Monad (filterM, when)
 import qualified Data.ByteString as BS
 import Data.IORef
+import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Type.Equality (TestEquality (testEquality), type (:~:) (Refl))
+import qualified DataFrame.IO.Parquet as Parquet
 import qualified DataFrame.Internal.Column as C
 import qualified DataFrame.Internal.DataFrame as D
 import qualified DataFrame.Internal.Expression as E
+import DataFrame.Internal.Schema (elements)
 import qualified DataFrame.Lazy.IO.Binary as Bin
 import qualified DataFrame.Lazy.IO.CSV as LCSV
 import DataFrame.Lazy.Internal.LogicalPlan (DataSource (..), SortOrder (..))
@@ -43,6 +47,9 @@ import DataFrame.Operations.Merge ()
 import qualified DataFrame.Operations.Permutation as Perm
 import qualified DataFrame.Operations.Subset as Sub
 import qualified DataFrame.Operations.Transformations as Trans
+import System.Directory (doesDirectoryExist)
+import System.FilePath ((</>))
+import System.FilePath.Glob (glob)
 import System.IO (hClose)
 import Type.Reflection (typeRep)
 
@@ -102,8 +109,8 @@ buildStream :: PhysicalPlan -> ExecutorConfig -> IO Stream
 -- Scan -----------------------------------------------------------------------
 buildStream (PhysicalScan (CsvSource path sep) cfg) _ =
     executeCsvScan path sep cfg
-buildStream (PhysicalScan (ParquetSource _path) _cfg) _ =
-    fail "Executor: Parquet source not yet supported in the lazy executor"
+buildStream (PhysicalScan (ParquetSource path) cfg) _ =
+    executeParquetScan path cfg
 buildStream (PhysicalSpill child path) execCfg = do
     df <- execute child execCfg
     Bin.spillToDisk path df
@@ -367,6 +374,36 @@ buildAggPlan aggs = foldl combine ([], [], id) (map processAgg aggs)
                     , finalize
                     )
         _ -> ([(name, ue)], [(name, ue)], id)
+
+-- ---------------------------------------------------------------------------
+-- Parquet scan implementation
+-- ---------------------------------------------------------------------------
+
+{- | Scan a Parquet file, directory, or glob.  Each file becomes one batch.
+Column projection and predicate pushdown are forwarded to 'readParquetWithOpts'
+via 'ParquetReadOptions'.
+-}
+executeParquetScan :: FilePath -> ScanConfig -> IO Stream
+executeParquetScan path cfg = do
+    isDir <- doesDirectoryExist path
+    let pat = if isDir then path </> "*" else path
+    matches <- glob pat
+    files <- filterM (fmap not . doesDirectoryExist) matches
+    when (null files) $
+        error ("executeParquetScan: no parquet files found for " ++ path)
+    let opts =
+            Parquet.defaultParquetReadOptions
+                { Parquet.selectedColumns = Just (M.keys (elements (scanSchema cfg)))
+                , Parquet.predicate = scanPushdownPredicate cfg
+                }
+    ref <- newIORef files
+    return . Stream $ do
+        fs <- readIORef ref
+        case fs of
+            [] -> return Nothing
+            (f : rest) -> do
+                writeIORef ref rest
+                Just <$> Parquet.readParquetWithOpts opts f
 
 -- ---------------------------------------------------------------------------
 -- CSV scan implementation

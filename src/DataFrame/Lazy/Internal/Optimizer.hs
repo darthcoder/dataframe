@@ -177,6 +177,10 @@ toPhysical batchSz (Scan (CsvSource path sep) schema) =
     PhysicalScan
         (CsvSource path sep)
         (ScanConfig batchSz sep schema Nothing)
+toPhysical batchSz (Filter p (Scan (ParquetSource path) schema)) =
+    PhysicalScan
+        (ParquetSource path)
+        (ScanConfig batchSz ',' schema (Just p))
 toPhysical batchSz (Scan (ParquetSource path) schema) =
     PhysicalScan
         (ParquetSource path)

@@ -71,6 +71,14 @@ scanSeparated sep schema path =
         , batchSize = 1_000_000
         }
 
+-- | Scan a Parquet file, directory of files, or glob pattern.
+scanParquet :: Schema -> T.Text -> LazyDataFrame
+scanParquet schema path =
+    LazyDataFrame
+        { plan = Scan (ParquetSource (T.unpack path)) schema
+        , batchSize = 1_000_000
+        }
+
 -- | Add a computed column (or overwrite an existing one).
 derive ::
     (C.Columnable a) => T.Text -> E.Expr a -> LazyDataFrame -> LazyDataFrame
