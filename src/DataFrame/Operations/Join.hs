@@ -170,28 +170,32 @@ ghci> D.innerJoin ["key"] df other
 @
 -}
 innerJoin :: [T.Text] -> DataFrame -> DataFrame -> DataFrame
-innerJoin cs right left =
-    let csSet = S.fromList cs
-        leftRows = fst (D.dimensions left)
-        rightRows = fst (D.dimensions right)
+innerJoin cs left right
+    | D.null right || D.null left = D.empty
+    | otherwise =
+        let
+            csSet = S.fromList cs
+            leftRows = fst (D.dimensions left)
+            rightRows = fst (D.dimensions right)
 
-        leftKeyIdxs = keyColIndices csSet left
-        rightKeyIdxs = keyColIndices csSet right
-        leftHashes = D.computeRowHashes leftKeyIdxs left
-        rightHashes = D.computeRowHashes rightKeyIdxs right
+            leftKeyIdxs = keyColIndices csSet left
+            rightKeyIdxs = keyColIndices csSet right
+            leftHashes = D.computeRowHashes leftKeyIdxs left
+            rightHashes = D.computeRowHashes rightKeyIdxs right
 
-        buildRows = min leftRows rightRows
-        (leftIxs, rightIxs)
-            | buildRows > joinStrategyThreshold =
-                sortMergeInnerKernel leftHashes rightHashes
-            | rightRows <= leftRows =
-                -- Build on right (smaller or equal), probe with left
-                hashInnerKernel leftHashes rightHashes
-            | otherwise =
-                -- Build on left (smaller), probe with right, swap result
-                let (!rIxs, !lIxs) = hashInnerKernel rightHashes leftHashes
-                 in (lIxs, rIxs)
-     in assembleInner csSet left right leftIxs rightIxs
+            buildRows = min leftRows rightRows
+            (leftIxs, rightIxs)
+                | buildRows > joinStrategyThreshold =
+                    sortMergeInnerKernel leftHashes rightHashes
+                | rightRows <= leftRows =
+                    -- Build on right (smaller or equal), probe with left
+                    hashInnerKernel leftHashes rightHashes
+                | otherwise =
+                    -- Build on left (smaller), probe with right, swap result
+                    let (!rIxs, !lIxs) = hashInnerKernel rightHashes leftHashes
+                     in (lIxs, rIxs)
+         in
+            assembleInner csSet left right leftIxs rightIxs
 
 {- | Hash-based inner join kernel.
 Builds compact index on @buildHashes@ (second arg), probes with
@@ -369,23 +373,28 @@ ghci> D.leftJoin ["key"] df other
 @
 -}
 leftJoin :: [T.Text] -> DataFrame -> DataFrame -> DataFrame
-leftJoin cs right left =
-    let csSet = S.fromList cs
-        rightRows = fst (D.dimensions right)
+leftJoin cs left right
+    | D.null right || D.nRows right == 0 = left
+    | D.null left || D.nRows left == 0 = D.empty
+    | otherwise =
+        let
+            csSet = S.fromList cs
+            rightRows = fst (D.dimensions right)
 
-        leftKeyIdxs = keyColIndices csSet left
-        rightKeyIdxs = keyColIndices csSet right
-        leftHashes = D.computeRowHashes leftKeyIdxs left
-        rightHashes = D.computeRowHashes rightKeyIdxs right
+            leftKeyIdxs = keyColIndices csSet left
+            rightKeyIdxs = keyColIndices csSet right
+            leftHashes = D.computeRowHashes leftKeyIdxs left
+            rightHashes = D.computeRowHashes rightKeyIdxs right
 
-        -- Right is always the build side for left join
-        (leftIxs, rightIxs)
-            | rightRows > joinStrategyThreshold =
-                sortMergeLeftKernel leftHashes rightHashes
-            | otherwise =
-                hashLeftKernel leftHashes rightHashes
-     in -- rightIxs uses -1 as sentinel for "no match"
-        assembleLeft csSet left right leftIxs rightIxs
+            -- Right is always the build side for left join
+            (leftIxs, rightIxs)
+                | rightRows > joinStrategyThreshold =
+                    sortMergeLeftKernel leftHashes rightHashes
+                | otherwise =
+                    hashLeftKernel leftHashes rightHashes
+         in
+            -- rightIxs uses -1 as sentinel for "no match"
+            assembleLeft csSet left right leftIxs rightIxs
 
 {- | Hash-based left join kernel.
 Returns @(leftExpandedIndices, rightExpandedIndices)@ where
@@ -574,24 +583,29 @@ rightJoin cs left right = leftJoin cs right left
 
 fullOuterJoin ::
     [T.Text] -> DataFrame -> DataFrame -> DataFrame
-fullOuterJoin cs right left =
-    let csSet = S.fromList cs
-        leftRows = fst (D.dimensions left)
-        rightRows = fst (D.dimensions right)
+fullOuterJoin cs left right
+    | D.null right || D.nRows right == 0 = left
+    | D.null left || D.nRows left == 0 = right
+    | otherwise =
+        let
+            csSet = S.fromList cs
+            leftRows = fst (D.dimensions left)
+            rightRows = fst (D.dimensions right)
 
-        leftKeyIdxs = keyColIndices csSet left
-        rightKeyIdxs = keyColIndices csSet right
-        leftHashes = D.computeRowHashes leftKeyIdxs left
-        rightHashes = D.computeRowHashes rightKeyIdxs right
+            leftKeyIdxs = keyColIndices csSet left
+            rightKeyIdxs = keyColIndices csSet right
+            leftHashes = D.computeRowHashes leftKeyIdxs left
+            rightHashes = D.computeRowHashes rightKeyIdxs right
 
-        -- Both sides can have nulls in full outer
-        (leftIxs, rightIxs)
-            | max leftRows rightRows > joinStrategyThreshold =
-                sortMergeFullOuterKernel leftHashes rightHashes
-            | otherwise =
-                hashFullOuterKernel leftHashes rightHashes
-     in -- Both index vectors use -1 as sentinel
-        assembleFullOuter csSet left right leftIxs rightIxs
+            -- Both sides can have nulls in full outer
+            (leftIxs, rightIxs)
+                | max leftRows rightRows > joinStrategyThreshold =
+                    sortMergeFullOuterKernel leftHashes rightHashes
+                | otherwise =
+                    hashFullOuterKernel leftHashes rightHashes
+         in
+            -- Both index vectors use -1 as sentinel
+            assembleFullOuter csSet left right leftIxs rightIxs
 
 {- | Hash-based full outer join kernel.
 Builds compact indices on both sides.

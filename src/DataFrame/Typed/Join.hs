@@ -43,7 +43,7 @@ leftJoin ::
     TypedDataFrame right ->
     TypedDataFrame (LeftJoinSchema keys left right)
 leftJoin (TDF l) (TDF r) =
-    unsafeFreeze (DJ.leftJoin keyNames r l)
+    unsafeFreeze (DJ.leftJoin keyNames l r)
   where
     keyNames = symbolVals @keys
 
@@ -55,7 +55,7 @@ rightJoin ::
     TypedDataFrame right ->
     TypedDataFrame (RightJoinSchema keys left right)
 rightJoin (TDF l) (TDF r) =
-    unsafeFreeze (DJ.rightJoin keyNames r l)
+    unsafeFreeze (DJ.rightJoin keyNames l r)
   where
     keyNames = symbolVals @keys
 

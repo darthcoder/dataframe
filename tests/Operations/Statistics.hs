@@ -6,6 +6,7 @@ module Operations.Statistics where
 
 import qualified Data.Vector.Unboxed as VU
 import qualified DataFrame as D
+import qualified DataFrame.Internal.Column as DI
 import qualified DataFrame.Internal.Statistics as D
 
 import Assertions
@@ -197,6 +198,62 @@ summarizeOptional =
             )
         )
 
+-- correlation
+
+correlationDf :: D.DataFrame
+correlationDf =
+    D.fromNamedColumns
+        [ ("x", DI.fromList [1 :: Int, 2, 3, 4, 5])
+        , ("y_pos", DI.fromList [1 :: Int, 2, 3, 4, 5])
+        , ("y_neg", DI.fromList [5 :: Int, 4, 3, 2, 1])
+        ]
+
+-- x perfectly predicts y_pos → r = 1.0
+correlationPerfectPositive :: Test
+correlationPerfectPositive =
+    TestCase
+        ( case D.correlation "x" "y_pos" correlationDf of
+            Nothing -> assertFailure "Expected Just 1.0, got Nothing"
+            Just r ->
+                assertBool
+                    "Perfect positive correlation should be 1.0"
+                    (abs (r - 1.0) < 1e-10)
+        )
+
+-- x perfectly anti-predicts y_neg → r = -1.0
+correlationPerfectNegative :: Test
+correlationPerfectNegative =
+    TestCase
+        ( case D.correlation "x" "y_neg" correlationDf of
+            Nothing -> assertFailure "Expected Just (-1.0), got Nothing"
+            Just r ->
+                assertBool
+                    "Perfect negative correlation should be -1.0"
+                    (abs (r + 1.0) < 1e-10)
+        )
+
+-- Correlation of a column with itself is 1.0
+correlationSelfIdentity :: Test
+correlationSelfIdentity =
+    TestCase
+        ( case D.correlation "x" "x" correlationDf of
+            Nothing -> assertFailure "Expected Just 1.0, got Nothing"
+            Just r ->
+                assertBool
+                    "Correlation of a column with itself should be 1.0"
+                    (abs (r - 1.0) < 1e-10)
+        )
+
+-- Requesting a missing column should throw ColumnNotFoundException
+correlationMissingColumn :: Test
+correlationMissingColumn =
+    TestCase
+        ( assertExpectException
+            "[Error Case]"
+            "missingcol"
+            (print $ D.correlation "x" "missingcol" correlationDf)
+        )
+
 tests :: [Test]
 tests =
     [ TestLabel "medianOfOddLengthDataSet" medianOfOddLengthDataSet
@@ -220,4 +277,8 @@ tests =
     , TestLabel "wrongQuantileNumber" wrongQuantileNumber
     , TestLabel "wrongQuantileIndex" wrongQuantileIndex
     , TestLabel "summarizeOptional" summarizeOptional
+    , TestLabel "correlationPerfectPositive" correlationPerfectPositive
+    , TestLabel "correlationPerfectNegative" correlationPerfectNegative
+    , TestLabel "correlationSelfIdentity" correlationSelfIdentity
+    , TestLabel "correlationMissingColumn" correlationMissingColumn
     ]

@@ -207,6 +207,79 @@ aggregationOnNoRows =
             )
         )
 
+-- distinct
+
+distinctRemovesDuplicates :: Test
+distinctRemovesDuplicates =
+    TestCase
+        ( assertEqual
+            "distinct reduces duplicate rows to one representative each"
+            3
+            ( D.nRows
+                ( D.distinct
+                    ( D.fromNamedColumns
+                        [ ("x", DI.fromList [1 :: Int, 1, 2, 2, 3])
+                        , ("y", DI.fromList [10 :: Int, 10, 20, 20, 30])
+                        ]
+                    )
+                )
+            )
+        )
+
+distinctNoDuplicates :: Test
+distinctNoDuplicates =
+    TestCase
+        ( assertEqual
+            "distinct on a DataFrame with no duplicates preserves all rows"
+            3
+            ( D.nRows
+                ( D.distinct
+                    ( D.fromNamedColumns
+                        [ ("x", DI.fromList [1 :: Int, 2, 3])
+                        , ("y", DI.fromList [10 :: Int, 20, 30])
+                        ]
+                    )
+                )
+            )
+        )
+
+distinctAllSameRows :: Test
+distinctAllSameRows =
+    TestCase
+        ( assertEqual
+            "distinct on all-identical rows leaves exactly one row"
+            1
+            ( D.nRows
+                ( D.distinct
+                    ( D.fromNamedColumns
+                        [("x", DI.fromList [42 :: Int, 42, 42, 42])]
+                    )
+                )
+            )
+        )
+
+-- groupBy on an Optional (nullable) column: Nothing values form their own group.
+optGroupByDf :: D.DataFrame
+optGroupByDf =
+    D.fromNamedColumns
+        [ ("key", DI.fromList [Just 1 :: Maybe Int, Just 1, Just 2, Nothing, Nothing])
+        , ("val", DI.fromList [10 :: Int, 20, 30, 40, 50])
+        ]
+
+groupByOptionalColumn :: Test
+groupByOptionalColumn =
+    TestCase
+        ( assertEqual
+            "groupBy on an Optional column groups Nothing values together"
+            3 -- groups: Just 1, Just 2, Nothing
+            ( D.nRows
+                ( optGroupByDf
+                    & D.groupBy ["key"]
+                    & D.aggregate [F.count (F.col @Int "val") `as` "val"]
+                )
+            )
+        )
+
 tests :: [Test]
 tests =
     [ TestLabel "foldAggregation" foldAggregation
@@ -228,4 +301,8 @@ tests =
     , TestLabel
         "aggregationOnNoRows"
         aggregationOnNoRows
+    , TestLabel "distinctRemovesDuplicates" distinctRemovesDuplicates
+    , TestLabel "distinctNoDuplicates" distinctNoDuplicates
+    , TestLabel "distinctAllSameRows" distinctAllSameRows
+    , TestLabel "groupByOptionalColumn" groupByOptionalColumn
     ]

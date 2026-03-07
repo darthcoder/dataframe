@@ -214,7 +214,7 @@ impute ::
     forall name a cols.
     ( KnownSymbol name
     , Columnable a
-    , (Maybe a) ~ Lookup name cols
+    , Maybe a ~ Lookup name cols
     ) =>
     a ->
     TypedDataFrame cols ->

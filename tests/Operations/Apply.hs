@@ -9,9 +9,11 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import qualified DataFrame as D
 import qualified DataFrame as DE
+import qualified DataFrame.Functions as F
 import qualified DataFrame.Internal.Column as DI
 import qualified DataFrame.Internal.DataFrame as D
 import qualified DataFrame.Internal.DataFrame as DI
+import DataFrame.Operations.Transformations (impute)
 
 import Assertions
 import Test.HUnit
@@ -208,6 +210,40 @@ applyWhereWAI =
             )
         )
 
+imputeData :: D.DataFrame
+imputeData =
+    D.fromNamedColumns
+        [ ("opt", DI.fromList [Just (1 :: Int), Nothing, Just 3])
+        , ("plain", DI.fromList [10 :: Int, 20, 30])
+        ]
+
+imputeHappyPath :: Test
+imputeHappyPath =
+    TestCase
+        ( assertEqual
+            "impute fills Nothing with the given value"
+            (Just $ DI.UnboxedColumn (VU.fromList [1 :: Int, 0, 3]))
+            (DI.getColumn "opt" $ impute (F.col @(Maybe Int) "opt") 0 imputeData)
+        )
+
+imputeColumnNotFound :: Test
+imputeColumnNotFound =
+    TestCase
+        ( assertExpectException
+            "[Error Case]"
+            (DE.columnNotFound "missing" "impute" (D.columnNames imputeData))
+            (print $ impute (F.col @(Maybe Int) "missing") 0 imputeData)
+        )
+
+imputeOnNonOptional :: Test
+imputeOnNonOptional =
+    TestCase
+        ( assertExpectException
+            "[Error Case]"
+            "Cannot impute to a non-Empty column: plain"
+            (print $ impute (F.col @(Maybe Int) "plain") 0 imputeData)
+        )
+
 tests :: [Test]
 tests =
     [ TestLabel "applyBoxedToUnboxed" applyBoxedToUnboxed
@@ -224,4 +260,7 @@ tests =
     , TestLabel "applyWhereConditionColumnNotFound" applyWhereConditionColumnNotFound
     , TestLabel "applyWhereTargetColumnNotFound" applyWhereTargetColumnNotFound
     , TestLabel "applyWhereWAI" applyWhereWAI
+    , TestLabel "imputeHappyPath" imputeHappyPath
+    , TestLabel "imputeColumnNotFound" imputeColumnNotFound
+    , TestLabel "imputeOnNonOptional" imputeOnNonOptional
     ]

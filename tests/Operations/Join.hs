@@ -51,7 +51,7 @@ testLeftJoin =
                 , ("B", D.fromList [Just "B0", Just "B1" :: Maybe Text, Just "B2"])
                 ]
             )
-            (D.sortBy [D.Asc (F.col @Text "key")] (leftJoin ["key"] df2 df1))
+            (D.sortBy [D.Asc (F.col @Text "key")] (leftJoin ["key"] df1 df2))
         )
 
 testRightJoin :: Test
@@ -65,7 +65,7 @@ testRightJoin =
                 , ("B", D.fromList ["B0" :: Text, "B1", "B2"])
                 ]
             )
-            (D.sortBy [D.Asc (F.col @Text "key")] (rightJoin ["key"] df2 df1))
+            (D.sortBy [D.Asc (F.col @Text "key")] (rightJoin ["key"] df1 df2))
         )
 
 tdf1 :: DT.TypedDataFrame [DT.Column "key" Text, DT.Column "A" Text]
@@ -191,7 +191,7 @@ testInnerJoinWithCollisions =
                 , ("Ronly", D.fromList [10 :: Int, 11])
                 ]
             )
-            (D.sortBy [D.Asc (F.col @Text "key")] (innerJoin ["key"] dfR dfL))
+            (D.sortBy [D.Asc (F.col @Text "key")] (innerJoin ["key"] dfL dfR))
         )
 
 testLeftJoinWithCollisions :: Test
@@ -209,7 +209,7 @@ testLeftJoinWithCollisions =
                 , ("Ronly", D.fromList [Just 10 :: Maybe Int, Just 11, Nothing])
                 ]
             )
-            (D.sortBy [D.Asc (F.col @Text "key")] (leftJoin ["key"] dfR dfL))
+            (D.sortBy [D.Asc (F.col @Text "key")] (leftJoin ["key"] dfL dfR))
         )
 
 testRightJoinWithCollisions :: Test
@@ -227,7 +227,7 @@ testRightJoinWithCollisions =
                 , ("Lonly", D.fromList [Just "L0" :: Maybe Text, Just "L1", Nothing])
                 ]
             )
-            (D.sortBy [D.Asc (F.col @Text "key")] (rightJoin ["key"] dfR dfL))
+            (D.sortBy [D.Asc (F.col @Text "key")] (rightJoin ["key"] dfL dfR))
         )
 
 testOuterJoinWithCollisions :: Test
@@ -250,7 +250,94 @@ testOuterJoinWithCollisions =
                 , ("Ronly", D.fromList [Just 10 :: Maybe Int, Just 11, Nothing, Just 13])
                 ]
             )
-            (D.sortBy [D.Asc (F.col @Text "key")] (fullOuterJoin ["key"] dfR dfL))
+            (D.sortBy [D.Asc (F.col @Text "key")] (fullOuterJoin ["key"] dfL dfR))
+        )
+
+-- Empty DataFrame fixtures: same schema as df1/df2 but zero rows.
+emptyDf1 :: D.DataFrame
+emptyDf1 =
+    D.fromNamedColumns
+        [ ("key", D.fromList ([] :: [Text]))
+        , ("A", D.fromList ([] :: [Text]))
+        ]
+
+emptyDf2 :: D.DataFrame
+emptyDf2 =
+    D.fromNamedColumns
+        [ ("key", D.fromList ([] :: [Text]))
+        , ("B", D.fromList ([] :: [Text]))
+        ]
+
+testInnerJoinBothEmpty :: Test
+testInnerJoinBothEmpty =
+    TestCase
+        ( assertEqual
+            "Inner join of two empty DataFrames produces 0 rows"
+            0
+            (D.nRows (innerJoin ["key"] emptyDf1 emptyDf2))
+        )
+
+testInnerJoinLeftEmpty :: Test
+testInnerJoinLeftEmpty =
+    TestCase
+        ( assertEqual
+            "Inner join with empty left produces 0 rows"
+            0
+            (D.nRows (innerJoin ["key"] emptyDf1 df2))
+        )
+
+testInnerJoinRightEmpty :: Test
+testInnerJoinRightEmpty =
+    TestCase
+        ( assertEqual
+            "Inner join with empty right produces 0 rows"
+            0
+            (D.nRows (innerJoin ["key"] df1 emptyDf2))
+        )
+
+testLeftJoinRightEmpty :: Test
+testLeftJoinRightEmpty =
+    TestCase
+        ( assertEqual
+            "Left join with empty right returns left"
+            6
+            (D.nRows (leftJoin ["key"] df1 emptyDf2))
+        )
+
+-- Many-to-many: duplicate keys on both sides produce the cross-product.
+-- manyLeft:  K0->A0, K1->A1, K1->A2
+-- manyRight: K0->B0, K1->B1, K1->B2
+-- Expected inner join: 1 K0 pair + 4 K1 pairs = 5 rows
+manyLeft :: D.DataFrame
+manyLeft =
+    D.fromNamedColumns
+        [ ("key", D.fromList ["K0" :: Text, "K1", "K1"])
+        , ("A", D.fromList ["A0" :: Text, "A1", "A2"])
+        ]
+
+manyRight :: D.DataFrame
+manyRight =
+    D.fromNamedColumns
+        [ ("key", D.fromList ["K0" :: Text, "K1", "K1"])
+        , ("B", D.fromList ["B0" :: Text, "B1", "B2"])
+        ]
+
+testManyToManyInnerJoin :: Test
+testManyToManyInnerJoin =
+    TestCase
+        ( assertEqual
+            "Many-to-many inner join produces cross-product row count"
+            5
+            (D.nRows (innerJoin ["key"] manyLeft manyRight))
+        )
+
+testManyToManyLeftJoin :: Test
+testManyToManyLeftJoin =
+    TestCase
+        ( assertEqual
+            "Many-to-many left join includes all cross-product rows"
+            5
+            (D.nRows (leftJoin ["key"] manyLeft manyRight))
         )
 
 tests :: [Test]
@@ -266,4 +353,10 @@ tests =
     , TestLabel "leftJoinWithCollisions" testLeftJoinWithCollisions
     , TestLabel "rightJoinWithCollisions" testRightJoinWithCollisions
     , TestLabel "outerJoinWithCollisions" testOuterJoinWithCollisions
+    , TestLabel "innerJoinBothEmpty" testInnerJoinBothEmpty
+    , TestLabel "innerJoinLeftEmpty" testInnerJoinLeftEmpty
+    , TestLabel "innerJoinRightEmpty" testInnerJoinRightEmpty
+    , TestLabel "leftJoinRightEmpty" testLeftJoinRightEmpty
+    , TestLabel "manyToManyInnerJoin" testManyToManyInnerJoin
+    , TestLabel "manyToManyLeftJoin" testManyToManyLeftJoin
     ]
