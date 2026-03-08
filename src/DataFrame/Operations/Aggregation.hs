@@ -59,12 +59,17 @@ groupBy names df
             names
             VU.empty
             (VU.fromList [0])
+            VU.empty
     | otherwise =
-        Grouped
-            df
-            names
-            (VU.map fst valueIndices)
-            (changingPoints valueIndices)
+        let !vis = VU.map fst valueIndices
+            !os = changingPoints valueIndices
+            !n = fst (dimensions df)
+         in Grouped
+                df
+                names
+                vis
+                os
+                (buildRowToGroup n vis os)
   where
     indicesToGroup = M.elems $ M.filterWithKey (\k _ -> k `elem` names) (columnIndices df)
     doubleToInt :: Double -> Int
@@ -158,6 +163,21 @@ groupBy names df
                  in fromIntegral ((h' `unsafeShiftR` shiftBits) .&. 65535)
         VA.sortBy numPasses bucketSize radixFunc mv
         VU.unsafeFreeze mv
+
+{- | Build the rowToGroup lookup vector from valueIndices and offsets.
+rowToGroup[i] = k means row i belongs to group k.
+-}
+buildRowToGroup :: Int -> VU.Vector Int -> VU.Vector Int -> VU.Vector Int
+buildRowToGroup n vis os = runST $ do
+    rtg <- VUM.new n
+    let nGroups = VU.length os - 1
+    forM_ [0 .. nGroups - 1] $ \k ->
+        let s = VU.unsafeIndex os k
+            e = VU.unsafeIndex os (k + 1)
+         in forM_ [s .. e - 1] $ \i ->
+                VUM.unsafeWrite rtg (VU.unsafeIndex vis i) k
+    VU.unsafeFreeze rtg
+{-# NOINLINE buildRowToGroup #-}
 
 changingPoints :: VU.Vector (Int, Int) -> VU.Vector Int
 changingPoints vs =
@@ -260,7 +280,7 @@ computeRowHashes indices df = runST $ do
 All ungrouped columns will be dropped.
 -}
 aggregate :: [NamedExpr] -> GroupedDataFrame -> DataFrame
-aggregate aggs gdf@(Grouped df groupingColumns valueIndices offsets) =
+aggregate aggs gdf@(Grouped df groupingColumns valueIndices offsets _rowToGroup) =
     let
         df' =
             selectIndices
@@ -289,4 +309,4 @@ selectIndices xs df =
 distinct :: DataFrame -> DataFrame
 distinct df = selectIndices (VU.map (indices VU.!) (VU.init os)) df
   where
-    (Grouped _ _ indices os) = groupBy (columnNames df) df
+    (Grouped _ _ indices os _rtg) = groupBy (columnNames df) df

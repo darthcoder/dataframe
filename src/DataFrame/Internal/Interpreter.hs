@@ -286,6 +286,63 @@ eval ctx expr@(If cond l r) = addContext expr $ do
     rv <- eval @a ctx r
     branchValue c lv rv
 
+-- Fast path: FoldAgg (seeded) on a bare Col in GroupCtx.
+-- Avoids the O(n) backpermute in sliceGroups by folding directly over
+-- permuted indices.  Only matches when inner is exactly (Col name).
+
+eval (GroupCtx gdf) expr@(Agg (FoldAgg _ (Just seed) (f :: a -> b -> a)) (Col name :: Expr b)) =
+    addContext expr $
+        case getColumn name (fullDataframe gdf) of
+            Nothing ->
+                Left $
+                    ColumnNotFoundException
+                        name
+                        ""
+                        (M.keys $ columnIndices $ fullDataframe gdf)
+            Just col ->
+                Flat <$> foldLinearGroups @b @a f seed col (rowToGroup gdf) (numGroups gdf)
+-- Fast path: FoldAgg (seedless) on a bare Col in GroupCtx.
+
+eval (GroupCtx gdf) expr@(Agg (FoldAgg _ Nothing (f :: a -> b -> a)) (Col name :: Expr b)) =
+    addContext expr $
+        case testEquality (typeRep @a) (typeRep @b) of
+            Nothing ->
+                Left $
+                    InternalException
+                        "Type mismatch in seedless fold: \
+                        \accumulator and element types must match"
+            Just Refl ->
+                case getColumn name (fullDataframe gdf) of
+                    Nothing ->
+                        Left $
+                            ColumnNotFoundException
+                                name
+                                ""
+                                (M.keys $ columnIndices $ fullDataframe gdf)
+                    Just col ->
+                        Flat . fromVector
+                            <$> foldl1DirectGroups @b f col (valueIndices gdf) (offsets gdf)
+-- Fast path: MergeAgg on a bare Col in GroupCtx.
+
+eval
+    (GroupCtx gdf)
+    expr@( Agg
+                (MergeAgg _ seed (step :: acc -> b -> acc) _ (finalize :: acc -> a))
+                (Col name :: Expr b)
+            ) =
+        addContext expr $
+            case getColumn name (fullDataframe gdf) of
+                Nothing ->
+                    Left $
+                        ColumnNotFoundException
+                            name
+                            ""
+                            (M.keys $ columnIndices $ fullDataframe gdf)
+                Just col ->
+                    Flat
+                        <$> ( foldLinearGroups @b step seed col (rowToGroup gdf) (numGroups gdf)
+                                >>= mapColumn finalize
+                            )
 -- Aggregation: CollectAgg ------------------------------------------------
 
 eval ctx expr@(Agg (CollectAgg _ (f :: v b -> a)) inner) =

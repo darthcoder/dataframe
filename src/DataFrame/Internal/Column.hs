@@ -37,6 +37,7 @@ import Data.Type.Equality (TestEquality (..))
 import DataFrame.Errors
 import DataFrame.Internal.Parsing
 import DataFrame.Internal.Types
+import System.IO.Unsafe (unsafePerformIO)
 import Type.Reflection
 
 {- | Our representation of a column is a GADT that can store data based on the underlying data.
@@ -623,6 +624,292 @@ foldl1Column f c@(UnboxedColumn (column :: VU.Vector d)) = case testEquality (ty
                     , errorColumnName = Nothing
                     }
                 )
+
+{- | O(n) Fold a column over groups without materialising a sorted copy.
+Instead of backpermuting the column (expensive: O(n) allocation + random reads),
+this iterates @valueIndices@ sequentially and accesses the column at each index.
+Avoids one 10M-element allocation per column per aggregation expression.
+-}
+foldDirectGroups ::
+    forall b acc.
+    (Columnable b) =>
+    (acc -> b -> acc) ->
+    acc ->
+    Column ->
+    VU.Vector Int -> -- valueIndices (sorted row order)
+    VU.Vector Int -> -- offsets (group boundaries)
+    Either DataFrameException (VB.Vector acc)
+foldDirectGroups f seed col valueIndices offsets
+    | VU.length offsets <= 1 = Right VB.empty
+    | otherwise =
+        let !nGroups = VU.length offsets - 1
+         in case col of
+                UnboxedColumn (vec :: VU.Vector d) ->
+                    case testEquality (typeRep @b) (typeRep @d) of
+                        Just Refl ->
+                            Right $
+                                VB.generate nGroups foldGroup
+                          where
+                            foldGroup k =
+                                let !s = VU.unsafeIndex offsets k
+                                    !e = VU.unsafeIndex offsets (k + 1)
+                                 in go s e seed
+                            go !i !e !acc
+                                | i >= e = acc
+                                | otherwise =
+                                    go (i + 1) e $!
+                                        f acc (VU.unsafeIndex vec (VU.unsafeIndex valueIndices i))
+                        Nothing ->
+                            Left $
+                                TypeMismatchException
+                                    MkTypeErrorContext
+                                        { userType = Right (typeRep @b)
+                                        , expectedType = Right (typeRep @d)
+                                        , callingFunctionName = Just "foldDirectGroups"
+                                        , errorColumnName = Nothing
+                                        }
+                BoxedColumn (vec :: VB.Vector d) ->
+                    case testEquality (typeRep @b) (typeRep @d) of
+                        Just Refl ->
+                            Right $
+                                VB.generate nGroups foldGroup
+                          where
+                            foldGroup k =
+                                let !s = VU.unsafeIndex offsets k
+                                    !e = VU.unsafeIndex offsets (k + 1)
+                                 in go s e seed
+                            go !i !e !acc
+                                | i >= e = acc
+                                | otherwise =
+                                    go (i + 1) e $!
+                                        f acc (VB.unsafeIndex vec (VU.unsafeIndex valueIndices i))
+                        Nothing ->
+                            Left $
+                                TypeMismatchException
+                                    MkTypeErrorContext
+                                        { userType = Right (typeRep @b)
+                                        , expectedType = Right (typeRep @d)
+                                        , callingFunctionName = Just "foldDirectGroups"
+                                        , errorColumnName = Nothing
+                                        }
+                OptionalColumn (vec :: VB.Vector (Maybe d)) ->
+                    case testEquality (typeRep @b) (typeRep @(Maybe d)) of
+                        Just Refl ->
+                            Right $
+                                VB.generate nGroups foldGroup
+                          where
+                            foldGroup k =
+                                let !s = VU.unsafeIndex offsets k
+                                    !e = VU.unsafeIndex offsets (k + 1)
+                                 in go s e seed
+                            go !i !e !acc
+                                | i >= e = acc
+                                | otherwise =
+                                    go (i + 1) e $!
+                                        f acc (VB.unsafeIndex vec (VU.unsafeIndex valueIndices i))
+                        Nothing ->
+                            Left $
+                                TypeMismatchException
+                                    MkTypeErrorContext
+                                        { userType = Right (typeRep @b)
+                                        , expectedType = Right (typeRep @(Maybe d))
+                                        , callingFunctionName = Just "foldDirectGroups"
+                                        , errorColumnName = Nothing
+                                        }
+{-# INLINEABLE foldDirectGroups #-}
+
+{- | O(n) Seedless fold over groups using the first element of each group as seed.
+Like 'foldDirectGroups' but for the case where no initial accumulator is available.
+-}
+foldl1DirectGroups ::
+    forall a.
+    (Columnable a) =>
+    (a -> a -> a) ->
+    Column ->
+    VU.Vector Int ->
+    VU.Vector Int ->
+    Either DataFrameException (VB.Vector a)
+foldl1DirectGroups f col valueIndices offsets
+    | VU.length offsets <= 1 = Right VB.empty
+    | otherwise =
+        let !nGroups = VU.length offsets - 1
+         in case col of
+                UnboxedColumn (vec :: VU.Vector d) ->
+                    case testEquality (typeRep @a) (typeRep @d) of
+                        Just Refl ->
+                            Right $
+                                VB.generate nGroups foldGroup
+                          where
+                            foldGroup k =
+                                let !s = VU.unsafeIndex offsets k
+                                    !e = VU.unsafeIndex offsets (k + 1)
+                                    !seed = VU.unsafeIndex vec (VU.unsafeIndex valueIndices s)
+                                 in go (s + 1) e seed
+                            go !i !e !acc
+                                | i >= e = acc
+                                | otherwise =
+                                    go (i + 1) e $!
+                                        f acc (VU.unsafeIndex vec (VU.unsafeIndex valueIndices i))
+                        Nothing ->
+                            Left $
+                                TypeMismatchException
+                                    MkTypeErrorContext
+                                        { userType = Right (typeRep @a)
+                                        , expectedType = Right (typeRep @d)
+                                        , callingFunctionName = Just "foldl1DirectGroups"
+                                        , errorColumnName = Nothing
+                                        }
+                BoxedColumn (vec :: VB.Vector d) ->
+                    case testEquality (typeRep @a) (typeRep @d) of
+                        Just Refl ->
+                            Right $
+                                VB.generate nGroups foldGroup
+                          where
+                            foldGroup k =
+                                let !s = VU.unsafeIndex offsets k
+                                    !e = VU.unsafeIndex offsets (k + 1)
+                                    !seed = VB.unsafeIndex vec (VU.unsafeIndex valueIndices s)
+                                 in go (s + 1) e seed
+                            go !i !e !acc
+                                | i >= e = acc
+                                | otherwise =
+                                    go (i + 1) e $!
+                                        f acc (VB.unsafeIndex vec (VU.unsafeIndex valueIndices i))
+                        Nothing ->
+                            Left $
+                                TypeMismatchException
+                                    MkTypeErrorContext
+                                        { userType = Right (typeRep @a)
+                                        , expectedType = Right (typeRep @d)
+                                        , callingFunctionName = Just "foldl1DirectGroups"
+                                        , errorColumnName = Nothing
+                                        }
+                OptionalColumn (vec :: VB.Vector (Maybe d)) ->
+                    case testEquality (typeRep @a) (typeRep @(Maybe d)) of
+                        Just Refl ->
+                            Right $
+                                VB.generate nGroups foldGroup
+                          where
+                            foldGroup k =
+                                let !s = VU.unsafeIndex offsets k
+                                    !e = VU.unsafeIndex offsets (k + 1)
+                                    !seed = VB.unsafeIndex vec (VU.unsafeIndex valueIndices s)
+                                 in go (s + 1) e seed
+                            go !i !e !acc
+                                | i >= e = acc
+                                | otherwise =
+                                    go (i + 1) e $!
+                                        f acc (VB.unsafeIndex vec (VU.unsafeIndex valueIndices i))
+                        Nothing ->
+                            Left $
+                                TypeMismatchException
+                                    MkTypeErrorContext
+                                        { userType = Right (typeRep @a)
+                                        , expectedType = Right (typeRep @(Maybe d))
+                                        , callingFunctionName = Just "foldl1DirectGroups"
+                                        , errorColumnName = Nothing
+                                        }
+{-# INLINEABLE foldl1DirectGroups #-}
+
+{- | O(n) fold over groups by scanning the column LINEARLY.
+rowToGroup[i] = group index for row i.
+Avoids random column reads; random writes go to the accumulator array which is
+small (nGroups entries) and typically cache-resident.
+When @acc@ is unboxable, uses an unboxed mutable vector for the accumulator
+array, eliminating pointer indirection on every read/write.
+-}
+foldLinearGroups ::
+    forall b acc.
+    (Columnable b, Columnable acc) =>
+    (acc -> b -> acc) ->
+    acc ->
+    Column ->
+    VU.Vector Int -> -- rowToGroup (length n)
+    Int -> -- nGroups
+    Either DataFrameException Column
+foldLinearGroups f seed col rowToGroup nGroups
+    | nGroups == 0 = Right (fromVector @acc VB.empty)
+    | otherwise = case col of
+        UnboxedColumn (vec :: VU.Vector d) ->
+            case testEquality (typeRep @b) (typeRep @d) of
+                Just Refl ->
+                    Right $
+                        unsafePerformIO $
+                            runWith
+                                ( \readAt writeAt ->
+                                    VU.iforM_ vec $ \row x -> do
+                                        let !k = VU.unsafeIndex rowToGroup row
+                                        cur <- readAt k
+                                        writeAt k $! f cur x
+                                )
+                Nothing ->
+                    Left $
+                        TypeMismatchException
+                            MkTypeErrorContext
+                                { userType = Right (typeRep @b)
+                                , expectedType = Right (typeRep @d)
+                                , callingFunctionName = Just "foldLinearGroups"
+                                , errorColumnName = Nothing
+                                }
+        BoxedColumn (vec :: VB.Vector d) ->
+            case testEquality (typeRep @b) (typeRep @d) of
+                Just Refl ->
+                    Right $
+                        unsafePerformIO $
+                            runWith
+                                ( \readAt writeAt ->
+                                    VB.iforM_ vec $ \row x -> do
+                                        let !k = VU.unsafeIndex rowToGroup row
+                                        cur <- readAt k
+                                        writeAt k $! f cur x
+                                )
+                Nothing ->
+                    Left $
+                        TypeMismatchException
+                            MkTypeErrorContext
+                                { userType = Right (typeRep @b)
+                                , expectedType = Right (typeRep @d)
+                                , callingFunctionName = Just "foldLinearGroups"
+                                , errorColumnName = Nothing
+                                }
+        OptionalColumn (vec :: VB.Vector (Maybe d)) ->
+            case testEquality (typeRep @b) (typeRep @(Maybe d)) of
+                Just Refl ->
+                    Right $
+                        unsafePerformIO $
+                            runWith
+                                ( \readAt writeAt ->
+                                    VB.iforM_ vec $ \row x -> do
+                                        let !k = VU.unsafeIndex rowToGroup row
+                                        cur <- readAt k
+                                        writeAt k $! f cur x
+                                )
+                Nothing ->
+                    Left $
+                        TypeMismatchException
+                            MkTypeErrorContext
+                                { userType = Right (typeRep @b)
+                                , expectedType = Right (typeRep @(Maybe d))
+                                , callingFunctionName = Just "foldLinearGroups"
+                                , errorColumnName = Nothing
+                                }
+  where
+    -- \| Allocate accumulators, run the traversal, return a frozen Column.
+    -- When @acc@ is unboxable, uses an unboxed mutable vector (no pointer
+    -- indirection per read/write) and returns UnboxedColumn directly —
+    -- avoiding a round-trip through VB.Vector.
+    runWith :: ((Int -> IO acc) -> (Int -> acc -> IO ()) -> IO ()) -> IO Column
+    runWith body = case sUnbox @acc of
+        STrue -> do
+            accs <- VUM.replicate nGroups seed
+            body (VUM.unsafeRead accs) (VUM.unsafeWrite accs)
+            UnboxedColumn <$> VU.unsafeFreeze accs
+        SFalse -> do
+            accs <- VBM.replicate nGroups seed
+            body (VBM.unsafeRead accs) (VBM.unsafeWrite accs)
+            fromVector @acc <$> VB.unsafeFreeze accs
+    {-# INLINE runWith #-}
+{-# INLINEABLE foldLinearGroups #-}
 
 headColumn :: forall a. (Columnable a) => Column -> Either DataFrameException a
 headColumn (BoxedColumn (col :: VB.Vector b)) = case testEquality (typeRep @a) (typeRep @b) of

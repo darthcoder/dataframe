@@ -28,7 +28,7 @@ groupBySingleRowWAI =
         ( assertEqual
             "Groups by single column"
             -- We don't yet compare offsets and indices
-            (D.Grouped testData ["test1"] VU.empty VU.empty)
+            (D.Grouped testData ["test1"] VU.empty VU.empty VU.empty)
             (D.groupBy ["test1"] testData)
         )
 
@@ -38,7 +38,7 @@ groupByMultipleRowsWAI =
         ( assertEqual
             "Groups by single column"
             -- We don't yet compare offsets and indices
-            (D.Grouped testData ["test1", "test2"] VU.empty VU.empty)
+            (D.Grouped testData ["test1", "test2"] VU.empty VU.empty VU.empty)
             (D.groupBy ["test1", "test2"] testData)
         )
 

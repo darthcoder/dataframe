@@ -50,17 +50,21 @@ data GroupedDataFrame = Grouped
     , groupedColumns :: [T.Text]
     , valueIndices :: VU.Vector Int
     , offsets :: VU.Vector Int
+    , rowToGroup :: VU.Vector Int
+    {- ^ rowToGroup[i] = group index for row i.  Length n (one per row).
+    Built once in 'groupBy'; reused by every aggregation.
+    -}
     }
 
 instance Show GroupedDataFrame where
-    show (Grouped df cols indices os) =
+    show (Grouped df cols _indices _os _rtg) =
         printf
             "{ keyColumns: %s groupedColumns: %s }"
             (show cols)
             (show (M.keys (columnIndices df) \\ cols))
 
 instance Eq GroupedDataFrame where
-    (==) (Grouped df cols indices os) (Grouped df' cols' indices' os') = (df == df') && (cols == cols')
+    (==) (Grouped df cols _indices _os _rtg) (Grouped df' cols' _indices' _os' _rtg') = (df == df') && (cols == cols')
 
 instance Eq DataFrame where
     (==) :: DataFrame -> DataFrame -> Bool
