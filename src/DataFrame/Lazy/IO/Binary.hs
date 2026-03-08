@@ -2,8 +2,8 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE StrictData #-}
+{-# LANGUAGE TypeApplications #-}
 
 {- | Simple column-oriented binary spill format (DFBN).
 
