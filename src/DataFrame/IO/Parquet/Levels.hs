@@ -4,7 +4,6 @@ import qualified Data.ByteString as BS
 import Data.Int
 import Data.List
 import qualified Data.Text as T
-import Data.Word
 
 import DataFrame.IO.Parquet.Binary
 import DataFrame.IO.Parquet.Encoding

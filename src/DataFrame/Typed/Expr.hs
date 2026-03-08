@@ -86,7 +86,6 @@ module DataFrame.Typed.Expr (
 import Data.Proxy (Proxy (..))
 import Data.String (IsString (..))
 import qualified Data.Text as T
-import qualified Data.Vector.Unboxed as VU
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 
 import DataFrame.Internal.Column (Columnable)
@@ -99,7 +98,7 @@ import DataFrame.Internal.Expression (
     UExpr (..),
     UnaryOp (..),
  )
-import DataFrame.Internal.Statistics
+
 import DataFrame.Typed.Schema (AssertPresent, Lookup)
 import DataFrame.Typed.Types (TExpr (..), TSortOrder (..))
 import Prelude hiding (maximum, minimum, sum)

@@ -998,7 +998,7 @@ concatenatedGzipMembers =
     TestCase
         ( assertExpectException
             "concatenatedGzipMembers"
-            "Page.hs"
+            "12"
             (D.readParquet "./tests/data/concatenated_gzip_members.parquet")
         )
 
@@ -1105,7 +1105,7 @@ pageV2EmptyCompressed =
     TestCase
         ( assertExpectException
             "pageV2EmptyCompressed"
-            "Page.hs"
+            "10"
             (D.readParquet "./tests/data/page_v2_empty_compressed.parquet")
         )
 

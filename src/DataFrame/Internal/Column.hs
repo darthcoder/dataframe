@@ -289,9 +289,6 @@ mapColumn f = \case
             STrue -> UnboxedColumn (VU.map f col)
             SFalse -> fromVector @c (VB.generate (VU.length col) (f . VU.unsafeIndex col))
         Nothing -> throwTypeMismatch @a @b
-{-# SPECIALIZE mapColumn ::
-    (Double -> Double) -> Column -> Either DataFrameException Column
-    #-}
 {-# INLINEABLE mapColumn #-}
 
 -- | Applies a function that returns an unboxed result to an unboxed vector, storing the result in a column.

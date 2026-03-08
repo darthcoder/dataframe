@@ -316,7 +316,10 @@ readTextColumn bs off nrows = do
     when (payloadStart + totalPayload > BS.length bs) $
         Left "unexpected end of input"
     let sizes =
-            zipWith (\a b -> fromIntegral b - fromIntegral a :: Int) offsets (tail offsets)
+            zipWith
+                (\a b -> fromIntegral b - fromIntegral a :: Int)
+                offsets
+                (drop 1 offsets)
         texts =
             zipWith
                 ( \o sz ->
