@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE StrictData #-}
 
 {- | Simple column-oriented binary spill format (DFBN).
 
@@ -36,25 +37,28 @@ module DataFrame.Lazy.IO.Binary (
 ) where
 
 import Control.Exception (SomeException, bracket, try)
-import Control.Monad
-import qualified Data.Binary.Get as G
-import qualified Data.Binary.Put as P
-import qualified Data.ByteString.Lazy as BL
+import Control.Monad (foldM, void, when)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BSB
+import qualified Data.ByteString.Internal as BSI
+import qualified Data.ByteString.Unsafe as BSU
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Vector as V
+import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
 
-import Data.Bits (setBit, testBit)
+import Data.Bits (setBit, shiftL, testBit, (.|.))
 import Data.Maybe (fromMaybe, isJust)
 import Data.Type.Equality (TestEquality (testEquality), type (:~:) (Refl))
 import Data.Word (Word16, Word32, Word64, Word8)
 import DataFrame.Internal.Column (Column (..))
 import DataFrame.Internal.DataFrame (DataFrame (..))
+import Foreign (ForeignPtr, castForeignPtr, plusForeignPtr, sizeOf)
 import System.Directory (getTemporaryDirectory, removeFile)
-import System.IO (hClose, openTempFile)
+import System.IO (IOMode (..), hClose, openTempFile, withFile)
 import Type.Reflection (typeRep)
 
 -- ---------------------------------------------------------------------------
@@ -75,33 +79,34 @@ tagMaybeText = 5
 
 -- | Serialise a 'DataFrame' to a DFBN binary file.
 spillToDisk :: FilePath -> DataFrame -> IO ()
-spillToDisk path df = BL.writeFile path (P.runPut (putDataFrame df))
+spillToDisk path df =
+    withFile path WriteMode $ \h -> BSB.hPutBuilder h (buildDataFrame df)
 
-putDataFrame :: DataFrame -> P.Put
-putDataFrame df = do
-    -- Magic
-    P.putByteString "DFBN"
-    -- Schema
-    let names =
-            fmap
-                fst
-                (L.sortBy (\a b -> compare (snd a) (snd b)) (M.toList (columnIndices df)))
-    let ncols = fromIntegral (length names) :: Word32
-    P.putWord32le ncols
-    let cols = V.toList (columns df)
-    mapM_ (uncurry putColumnSchema) (zip names cols)
-    -- Row count
-    let nrows = fromIntegral (fst (dataframeDimensions df)) :: Word64
-    P.putWord64le nrows
-    -- Column data
-    mapM_ (putColumnData (fst (dataframeDimensions df))) cols
+buildDataFrame :: DataFrame -> BSB.Builder
+buildDataFrame df =
+    BSB.byteString "DFBN"
+        <> BSB.word32LE ncols
+        <> foldMap (uncurry buildColumnSchema) (zip names cols)
+        <> BSB.word64LE nrows
+        <> foldMap (buildColumnData nrowsInt) cols
+  where
+    names =
+        fmap
+            fst
+            (L.sortBy (\a b -> compare (snd a) (snd b)) (M.toList (columnIndices df)))
+    ncols = fromIntegral (length names) :: Word32
+    cols = V.toList (columns df)
+    nrowsInt = fst (dataframeDimensions df)
+    nrows = fromIntegral nrowsInt :: Word64
 
-putColumnSchema :: T.Text -> Column -> P.Put
-putColumnSchema name col = do
-    let nameBytes = TE.encodeUtf8 name
-    P.putWord16le (fromIntegral (BL.length (BL.fromStrict nameBytes)) :: Word16)
-    P.putByteString nameBytes
-    P.putWord8 (columnTypeTag col)
+buildColumnSchema :: T.Text -> Column -> BSB.Builder
+buildColumnSchema name col =
+    BSB.word16LE nameLen
+        <> BSB.byteString nameBytes
+        <> BSB.word8 (columnTypeTag col)
+  where
+    nameBytes = TE.encodeUtf8 name
+    nameLen = fromIntegral (BS.length nameBytes) :: Word16
 
 columnTypeTag :: Column -> Word8
 columnTypeTag (UnboxedColumn (_ :: VU.Vector a)) =
@@ -118,154 +123,305 @@ columnTypeTag (OptionalColumn (_ :: V.Vector (Maybe a))) =
             Just Refl -> tagMaybeDouble
             Nothing -> tagMaybeText
 
-putColumnData :: Int -> Column -> P.Put
-putColumnData _ (UnboxedColumn (v :: VU.Vector a)) =
+buildColumnData :: Int -> Column -> BSB.Builder
+buildColumnData _ (UnboxedColumn (v :: VU.Vector a)) =
+    case testEquality (typeRep @a) (typeRep @Int) of
+        Just Refl -> buildIntVector v
+        Nothing ->
+            case testEquality (typeRep @a) (typeRep @Double) of
+                Just Refl -> buildDoubleVector v
+                Nothing -> error "spillToDisk: unsupported UnboxedColumn element type"
+buildColumnData _ (BoxedColumn (v :: V.Vector a)) =
+    case testEquality (typeRep @a) (typeRep @T.Text) of
+        Just Refl -> buildTextVector v
+        Nothing -> error "spillToDisk: unsupported BoxedColumn element type"
+buildColumnData _ (OptionalColumn (v :: V.Vector (Maybe a))) =
     case testEquality (typeRep @a) (typeRep @Int) of
         Just Refl ->
-            VU.mapM_ (\x -> P.putInt64le (fromIntegral (x :: Int))) v
+            buildNullBitmap (V.map isJust v)
+                <> buildIntVector (VU.convert (V.map (fromMaybe 0) v))
         Nothing ->
             case testEquality (typeRep @a) (typeRep @Double) of
                 Just Refl ->
-                    VU.mapM_ (\x -> P.putDoublele (x :: Double)) v
+                    buildNullBitmap (V.map isJust v)
+                        <> buildDoubleVector (VU.convert (V.map (fromMaybe 0.0) v))
                 Nothing ->
-                    error "spillToDisk: unsupported UnboxedColumn element type"
-putColumnData _ (BoxedColumn (v :: V.Vector a)) =
-    case testEquality (typeRep @a) (typeRep @T.Text) of
-        Just Refl -> putTextVector v
-        Nothing -> error "spillToDisk: unsupported BoxedColumn element type"
-putColumnData _ (OptionalColumn (v :: V.Vector (Maybe a))) =
-    case testEquality (typeRep @a) (typeRep @Int) of
-        Just Refl -> do
-            putNullBitmap (V.map isJust v)
-            V.mapM_ (\mx -> P.putInt64le (fromIntegral (fromMaybe 0 mx :: Int))) v
-        Nothing ->
-            case testEquality (typeRep @a) (typeRep @Double) of
-                Just Refl -> do
-                    putNullBitmap (V.map isJust v)
-                    V.mapM_ (\mx -> P.putDoublele (fromMaybe 0.0 mx :: Double)) v
-                Nothing -> do
-                    -- Maybe Text or other Show-able type
                     let showText x = case testEquality (typeRep @a) (typeRep @T.Text) of
                             Just Refl -> x
                             Nothing -> T.pack (show x)
-                    let texts = V.map (maybe T.empty showText) v
-                    putNullBitmap (V.map isJust v)
-                    putTextVector texts
+                        texts = V.map (maybe T.empty showText) v
+                     in buildNullBitmap (V.map isJust v) <> buildTextVector texts
 
--- | Write a null-validity bitmap: 1 bit per row, packed LSB-first into bytes.
-putNullBitmap :: V.Vector Bool -> P.Put
-putNullBitmap valids = mapM_ P.putWord8 bytes
+{- | Bulk-encode an Int vector as 8-byte LE values (native layout on LE platforms).
+hPutBuilder flushes synchronously so the underlying ForeignPtr outlives the Builder.
+-}
+buildIntVector :: VU.Vector Int -> BSB.Builder
+buildIntVector v =
+    let sv = VU.convert v :: VS.Vector Int
+        (fp, n) = VS.unsafeToForeignPtr0 sv
+        bs = BSI.fromForeignPtr (castForeignPtr fp) 0 (n * sizeOf (0 :: Int))
+     in BSB.byteString bs
+
+-- | Bulk-encode a Double vector as 8-byte LE IEEE 754 values (native layout on LE platforms).
+buildDoubleVector :: VU.Vector Double -> BSB.Builder
+buildDoubleVector v =
+    let sv = VU.convert v :: VS.Vector Double
+        (fp, n) = VS.unsafeToForeignPtr0 sv
+        bs = BSI.fromForeignPtr (castForeignPtr fp) 0 (n * sizeOf (0 :: Double))
+     in BSB.byteString bs
+
+-- | Write a Text vector: (num_rows+1) Word32 offsets followed by UTF-8 payload.
+buildTextVector :: V.Vector T.Text -> BSB.Builder
+buildTextVector v =
+    foldMap BSB.word32LE offsets <> foldMap BSB.byteString encoded
+  where
+    encoded = V.toList (V.map TE.encodeUtf8 v)
+    offsets = scanl (\acc bs -> acc + fromIntegral (BS.length bs)) (0 :: Word32) encoded
+
+-- | Build a null-validity bitmap: 1 bit per row, packed LSB-first into bytes.
+buildNullBitmap :: V.Vector Bool -> BSB.Builder
+buildNullBitmap valids = foldMap (BSB.word8 . mkByte) [0 .. numBytes - 1]
   where
     n = V.length valids
     numBytes = (n + 7) `div` 8
-    bytes =
-        [ foldr
+    mkByte byteIdx =
+        foldr
             ( \bit acc ->
                 let row = byteIdx * 8 + bit
-                 in if row < n && (valids V.! row)
-                        then setBit acc bit
-                        else acc
+                 in if row < n && (valids V.! row) then setBit acc bit else acc
             )
             (0 :: Word8)
             [0 .. 7]
-        | byteIdx <- [0 .. numBytes - 1]
-        ]
-
--- | Write a Text vector: (num_rows+1) Word32 offsets followed by UTF-8 payload.
-putTextVector :: V.Vector T.Text -> P.Put
-putTextVector v = do
-    let encoded = V.map TE.encodeUtf8 v
-    let offsets =
-            V.scanl
-                (\acc bs -> acc + fromIntegral (BL.length (BL.fromStrict bs)))
-                (0 :: Word32)
-                encoded
-    V.mapM_ P.putWord32le offsets
-    V.mapM_ P.putByteString encoded
 
 -- ---------------------------------------------------------------------------
 -- Read
 -- ---------------------------------------------------------------------------
 
+-- | @(new_offset, value)@
+type ParseResult a = Either String (Int, a)
+
 -- | Deserialise a DFBN binary file into a 'DataFrame'.
 readSpilled :: FilePath -> IO DataFrame
 readSpilled path = do
-    bs <- BL.readFile path
-    case G.runGetOrFail getDataFrame bs of
-        Left (_, _, err) -> fail ("readSpilled: " <> err)
-        Right (_, _, df) -> return df
+    bs <- BS.readFile path
+    case parseDataFrame bs 0 of
+        Left err -> fail ("readSpilled: " <> err)
+        Right (_, df) -> return df
 
-getDataFrame :: G.Get DataFrame
-getDataFrame = do
-    magic <- G.getByteString 4
-    when (magic /= "DFBN") $ fail "readSpilled: bad magic bytes"
-    ncols <- fromIntegral <$> G.getWord32le
-    schema <- mapM (const getColumnSchema) [1 .. ncols :: Int]
-    nrows <- fromIntegral <$> G.getWord64le
-    cols <- mapM (getColumnData nrows . snd) schema
+parseDataFrame :: BS.ByteString -> Int -> ParseResult DataFrame
+parseDataFrame bs off0 = do
+    (off1, magic) <- readBytes bs off0 4
+    when (magic /= "DFBN") $ Left "bad magic bytes"
+    (off2, ncols) <- readWord32LE bs off1
+    let ncolsInt = fromIntegral ncols :: Int
+    (off3, schema) <- readN ncolsInt (readColumnSchema bs) off2
+    (off4, nrows64) <- readWord64LE bs off3
+    let nrows = fromIntegral nrows64 :: Int
+    (off5, cols) <-
+        foldM
+            ( \(o, acc) (_, tag) -> do
+                (o', col) <- readColumnData bs o nrows tag
+                return (o', acc ++ [col])
+            )
+            (off4, [])
+            schema
     let names = fmap fst schema
-    return $
-        DataFrame
+    return
+        ( off5
+        , DataFrame
             { columns = V.fromList cols
             , columnIndices = M.fromList (zip names [0 ..])
-            , dataframeDimensions = (nrows, ncols)
+            , dataframeDimensions = (nrows, ncolsInt)
             , derivingExpressions = M.empty
             }
+        )
 
-getColumnSchema :: G.Get (T.Text, Word8)
-getColumnSchema = do
-    nameLen <- fromIntegral <$> G.getWord16le
-    nameBytes <- G.getByteString nameLen
-    tag <- G.getWord8
-    return (TE.decodeUtf8 nameBytes, tag)
+readColumnSchema :: BS.ByteString -> Int -> ParseResult (T.Text, Word8)
+readColumnSchema bs off = do
+    (off1, nameLen) <- readWord16LE bs off
+    let nameLenInt = fromIntegral nameLen :: Int
+    (off2, nameBytes) <- readBytes bs off1 nameLenInt
+    (off3, tag) <- readWord8 bs off2
+    return (off3, (TE.decodeUtf8 nameBytes, tag))
 
-getColumnData :: Int -> Word8 -> G.Get Column
-getColumnData nrows tag
+readColumnData :: BS.ByteString -> Int -> Int -> Word8 -> ParseResult Column
+readColumnData bs off nrows tag
     | tag == tagInt = do
-        vals <- mapM (const (fromIntegral <$> G.getInt64le)) [1 .. nrows]
-        return $ UnboxedColumn (VU.fromList (vals :: [Int]))
+        (off', v) <- readIntColumn bs off nrows
+        return (off', UnboxedColumn v)
     | tag == tagDouble = do
-        vals <- mapM (const G.getDoublele) [1 .. nrows]
-        return $ UnboxedColumn (VU.fromList (vals :: [Double]))
+        (off', v) <- readDoubleColumn bs off nrows
+        return (off', UnboxedColumn v)
     | tag == tagText = do
-        offsets <- mapM (const (fromIntegral <$> G.getWord32le)) [0 .. nrows]
-        let sizes = zipWith (-) (tail offsets) offsets
-        texts <- mapM (fmap TE.decodeUtf8 . G.getByteString) sizes
-        return $ BoxedColumn (V.fromList texts)
+        (off', v) <- readTextColumn bs off nrows
+        return (off', BoxedColumn v)
     | tag == tagMaybeInt = do
-        bitmap <- getNullBitmap nrows
-        vals <- mapM (const (fromIntegral <$> G.getInt64le)) [1 .. nrows]
-        let maybes = zipWith (\valid v -> if valid then Just (v :: Int) else Nothing) bitmap vals
-        return $ OptionalColumn (V.fromList maybes)
-    | tag == tagMaybeDouble = do
-        bitmap <- getNullBitmap nrows
-        vals <- mapM (const G.getDoublele) [1 .. nrows]
+        (off1, bitmap) <- readNullBitmap bs off nrows
+        (off2, v) <- readIntColumn bs off1 nrows
         let maybes =
-                zipWith (\valid v -> if valid then Just (v :: Double) else Nothing) bitmap vals
-        return $ OptionalColumn (V.fromList maybes)
+                V.fromList
+                    (zipWith (\valid x -> if valid then Just x else Nothing) bitmap (VU.toList v)) ::
+                    V.Vector (Maybe Int)
+        return (off2, OptionalColumn maybes)
+    | tag == tagMaybeDouble = do
+        (off1, bitmap) <- readNullBitmap bs off nrows
+        (off2, v) <- readDoubleColumn bs off1 nrows
+        let maybes =
+                V.fromList
+                    (zipWith (\valid x -> if valid then Just x else Nothing) bitmap (VU.toList v)) ::
+                    V.Vector (Maybe Double)
+        return (off2, OptionalColumn maybes)
     | tag == tagMaybeText = do
-        bitmap <- getNullBitmap nrows
-        offsets <- mapM (const (fromIntegral <$> G.getWord32le)) [0 .. nrows]
-        let sizes = zipWith (-) (tail offsets) offsets
-        texts <- mapM (fmap TE.decodeUtf8 . G.getByteString) sizes
-        let maybes = zipWith (\valid t -> if valid then Just t else Nothing) bitmap texts
-        return $ OptionalColumn (V.fromList maybes)
-    | otherwise = fail ("readSpilled: unknown type tag " <> show tag)
+        (off1, bitmap) <- readNullBitmap bs off nrows
+        (off2, v) <- readTextColumn bs off1 nrows
+        let maybes =
+                V.fromList
+                    (zipWith (\valid x -> if valid then Just x else Nothing) bitmap (V.toList v)) ::
+                    V.Vector (Maybe T.Text)
+        return (off2, OptionalColumn maybes)
+    | otherwise = Left ("unknown type tag " <> show tag)
 
--- | Read a null-bitmap for @nrows@ rows (ceil(nrows/8) bytes).
-getNullBitmap :: Int -> G.Get [Bool]
-getNullBitmap nrows = do
-    let numBytes = (nrows + 7) `div` 8
-    bytes <- mapM (const G.getWord8) [1 .. numBytes]
-    return $
-        take
-            nrows
-            [ testBit (bytes !! (row `div` 8)) (row `mod` 8)
-            | row <- [0 ..]
+{- | Zero-copy Int column read: reuses the ByteString buffer's ForeignPtr.
+Safe as long as 'bs' stays live during the caller's use of the resulting vector.
+Only correct on little-endian platforms (aarch64/x86_64).
+-}
+readIntColumn :: BS.ByteString -> Int -> Int -> ParseResult (VU.Vector Int)
+readIntColumn bs off nrows
+    | off + nrows * 8 > BS.length bs = Left "unexpected end of input"
+    | otherwise =
+        let (fp, bsOff, _) = BSI.toForeignPtr bs
+            fp' = castForeignPtr (plusForeignPtr fp (bsOff + off)) :: ForeignPtr Int
+            sv = VS.unsafeFromForeignPtr0 fp' nrows :: VS.Vector Int
+         in Right (off + nrows * 8, VU.convert sv)
+
+{- | Zero-copy Double column read: reuses the ByteString buffer's ForeignPtr.
+Safe as long as 'bs' stays live during the caller's use of the resulting vector.
+Only correct on little-endian platforms (aarch64/x86_64).
+-}
+readDoubleColumn ::
+    BS.ByteString -> Int -> Int -> ParseResult (VU.Vector Double)
+readDoubleColumn bs off nrows
+    | off + nrows * 8 > BS.length bs = Left "unexpected end of input"
+    | otherwise =
+        let (fp, bsOff, _) = BSI.toForeignPtr bs
+            fp' = castForeignPtr (plusForeignPtr fp (bsOff + off)) :: ForeignPtr Double
+            sv = VS.unsafeFromForeignPtr0 fp' nrows :: VS.Vector Double
+         in Right (off + nrows * 8, VU.convert sv)
+
+readTextColumn :: BS.ByteString -> Int -> Int -> ParseResult (V.Vector T.Text)
+readTextColumn bs off nrows = do
+    offsets <- readWord32Array bs off (nrows + 1)
+    let payloadStart = off + (nrows + 1) * 4
+        totalPayload = fromIntegral (last offsets) :: Int
+    when (payloadStart + totalPayload > BS.length bs) $
+        Left "unexpected end of input"
+    let sizes =
+            zipWith (\a b -> fromIntegral b - fromIntegral a :: Int) offsets (tail offsets)
+        texts =
+            zipWith
+                ( \o sz ->
+                    TE.decodeUtf8
+                        (BS.take sz (BS.drop (payloadStart + fromIntegral o) bs))
+                )
+                offsets
+                sizes
+    return (payloadStart + totalPayload, V.fromList texts)
+
+-- | Read @nrows@ null-bitmap bits (ceil(nrows\/8) bytes).
+readNullBitmap :: BS.ByteString -> Int -> Int -> ParseResult [Bool]
+readNullBitmap bs off nrows
+    | off + numBytes > BS.length bs = Left "unexpected end of input"
+    | otherwise =
+        Right
+            ( off + numBytes
+            , take
+                nrows
+                [ testBit (BSU.unsafeIndex bs (off + row `div` 8)) (row `mod` 8)
+                | row <- [0 ..]
+                ]
+            )
+  where
+    numBytes = (nrows + 7) `div` 8
+
+readWord8 :: BS.ByteString -> Int -> ParseResult Word8
+readWord8 bs off
+    | off >= BS.length bs = Left "unexpected end of input"
+    | otherwise = Right (off + 1, BSU.unsafeIndex bs off)
+
+readWord16LE :: BS.ByteString -> Int -> ParseResult Word16
+readWord16LE bs off
+    | off + 2 > BS.length bs = Left "unexpected end of input"
+    | otherwise =
+        let b0 = fromIntegral (BSU.unsafeIndex bs off) :: Word16
+            b1 = fromIntegral (BSU.unsafeIndex bs (off + 1)) :: Word16
+         in Right (off + 2, b0 .|. (b1 `shiftL` 8))
+
+readWord32LE :: BS.ByteString -> Int -> ParseResult Word32
+readWord32LE bs off
+    | off + 4 > BS.length bs = Left "unexpected end of input"
+    | otherwise =
+        let b0 = fromIntegral (BSU.unsafeIndex bs off) :: Word32
+            b1 = fromIntegral (BSU.unsafeIndex bs (off + 1)) :: Word32
+            b2 = fromIntegral (BSU.unsafeIndex bs (off + 2)) :: Word32
+            b3 = fromIntegral (BSU.unsafeIndex bs (off + 3)) :: Word32
+         in Right
+                (off + 4, b0 .|. (b1 `shiftL` 8) .|. (b2 `shiftL` 16) .|. (b3 `shiftL` 24))
+
+readWord64LE :: BS.ByteString -> Int -> ParseResult Word64
+readWord64LE bs off
+    | off + 8 > BS.length bs = Left "unexpected end of input"
+    | otherwise =
+        let b0 = fromIntegral (BSU.unsafeIndex bs off) :: Word64
+            b1 = fromIntegral (BSU.unsafeIndex bs (off + 1)) :: Word64
+            b2 = fromIntegral (BSU.unsafeIndex bs (off + 2)) :: Word64
+            b3 = fromIntegral (BSU.unsafeIndex bs (off + 3)) :: Word64
+            b4 = fromIntegral (BSU.unsafeIndex bs (off + 4)) :: Word64
+            b5 = fromIntegral (BSU.unsafeIndex bs (off + 5)) :: Word64
+            b6 = fromIntegral (BSU.unsafeIndex bs (off + 6)) :: Word64
+            b7 = fromIntegral (BSU.unsafeIndex bs (off + 7)) :: Word64
+         in Right
+                ( off + 8
+                , b0
+                    .|. (b1 `shiftL` 8)
+                    .|. (b2 `shiftL` 16)
+                    .|. (b3 `shiftL` 24)
+                    .|. (b4 `shiftL` 32)
+                    .|. (b5 `shiftL` 40)
+                    .|. (b6 `shiftL` 48)
+                    .|. (b7 `shiftL` 56)
+                )
+
+-- | Read @n@ consecutive Word32LE values starting at offset @off@.
+readWord32Array :: BS.ByteString -> Int -> Int -> Either String [Word32]
+readWord32Array bs off n
+    | off + n * 4 > BS.length bs = Left "unexpected end of input"
+    | otherwise =
+        Right
+            [ let i = off + k * 4
+                  b0 = fromIntegral (BSU.unsafeIndex bs i) :: Word32
+                  b1 = fromIntegral (BSU.unsafeIndex bs (i + 1)) :: Word32
+                  b2 = fromIntegral (BSU.unsafeIndex bs (i + 2)) :: Word32
+                  b3 = fromIntegral (BSU.unsafeIndex bs (i + 3)) :: Word32
+               in b0 .|. (b1 `shiftL` 8) .|. (b2 `shiftL` 16) .|. (b3 `shiftL` 24)
+            | k <- [0 .. n - 1]
             ]
 
+-- | Read @n@ bytes from @bs@ at @off@.
+readBytes :: BS.ByteString -> Int -> Int -> ParseResult BS.ByteString
+readBytes bs off n
+    | off + n > BS.length bs = Left "unexpected end of input"
+    | otherwise = Right (off + n, BS.take n (BS.drop off bs))
+
+-- | Apply @f@ @n@ times sequentially, threading the offset.
+readN :: Int -> (Int -> ParseResult a) -> Int -> ParseResult [a]
+readN 0 _ off = Right (off, [])
+readN n f off = do
+    (off', x) <- f off
+    (off'', xs) <- readN (n - 1) f off'
+    return (off'', x : xs)
+
 -- ---------------------------------------------------------------------------
--- bracket helper
+-- Bracket helper
 -- ---------------------------------------------------------------------------
 
 {- | Spill a DataFrame to a temporary file, run an action with the path,

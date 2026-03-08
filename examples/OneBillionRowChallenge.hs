@@ -16,8 +16,8 @@ import DataFrame.Operators
 
 main :: IO ()
 main = do
-    let city = F.col @Text "City"
-    let measurement = F.col @Double "Measurement"
+    let city = F.col @Text "names"
+    let measurement = F.col @Double "temperature"
     let schema =
             Schema $
                 M.fromList
@@ -27,7 +27,7 @@ main = do
 
     startCalculation <- getCurrentTime
     df <-
-        L.scanSeparated ';' schema "../data/measurements.txt"
+        L.scanCsv schema "../../1brc/measurements_1B.txt"
             |> L.groupBy
                 [F.name city]
                 [ F.minimum measurement `as` "minimum"
