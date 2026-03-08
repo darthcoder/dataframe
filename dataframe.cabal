@@ -209,9 +209,6 @@ benchmark dataframe-benchmark
                    process >= 1.6 && < 2,
                    dataframe >= 0.5 && < 1,
                    random >= 1 && < 2,
-                   text >= 2.0 && < 3,
-                   deepseq >= 1 && < 2,
-                   vector ^>= 0.13,
     default-language: Haskell2010
     ghc-options:
       -threaded

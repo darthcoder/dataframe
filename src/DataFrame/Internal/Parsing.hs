@@ -15,6 +15,7 @@ import Data.ByteString.Lex.Fractional
 import Data.Foldable (fold)
 import Data.Maybe (fromMaybe)
 import Data.Text.Read (decimal, double, signed)
+import Data.Time (Day, defaultTimeLocale, parseTimeM)
 import GHC.Stack (HasCallStack)
 import System.IO (Handle, IOMode (..), hIsEOF, hTell, withFile)
 import Text.Read (readMaybe)
@@ -22,6 +23,13 @@ import Prelude hiding (takeWhile)
 
 isNullish :: T.Text -> Bool
 isNullish =
+    ( `S.member`
+        S.fromList
+            ["Nothing", "NULL", "", " ", "nan", "null", "N/A", "NaN", "NAN", "NA"]
+    )
+
+isNullishBS :: C.ByteString -> Bool
+isNullishBS =
     ( `S.member`
         S.fromList
             ["Nothing", "NULL", "", " ", "nan", "null", "N/A", "NaN", "NAN", "NA"]
@@ -43,6 +51,15 @@ readBool s
     | isTrueish s = Just True
     | isFalseish s = Just False
     | otherwise = Nothing
+
+readByteStringBool :: C.ByteString -> Maybe Bool
+readByteStringBool s
+    | s `elem` ["True", "true", "TRUE"] = Just True
+    | s `elem` ["False", "false", "FALSE"] = Just False
+    | otherwise = Nothing
+
+readByteStringDate :: String -> C.ByteString -> Maybe Day
+readByteStringDate fmt = parseTimeM True defaultTimeLocale fmt . C.unpack
 
 readInteger :: (HasCallStack) => T.Text -> Maybe Integer
 readInteger s = case signed decimal (T.strip s) of

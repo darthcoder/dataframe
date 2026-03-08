@@ -10,6 +10,8 @@
 
 module DataFrame.IO.CSV where
 
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
@@ -66,6 +68,7 @@ data BuilderColumn
     = BuilderInt !(PagedUnboxedVector Int) !(PagedUnboxedVector Word8)
     | BuilderDouble !(PagedUnboxedVector Double) !(PagedUnboxedVector Word8)
     | BuilderText !(PagedVector T.Text) !(PagedUnboxedVector Word8)
+    | BuilderBS !(PagedVector BS.ByteString) !(PagedUnboxedVector Word8)
 
 newPagedVector :: IO (PagedVector a)
 newPagedVector = do
@@ -141,7 +144,10 @@ freezePagedUnboxedVector (PagedUnboxedVector chunksRef activeRef countRef) = do
 data HeaderSpec = NoHeader | UseFirstRow | ProvideNames [T.Text]
     deriving (Eq, Show)
 
-data TypeSpec = InferFromSample Int | SpecifyTypes [SchemaType] | NoInference
+data TypeSpec
+    = InferFromSample Int
+    | SpecifyTypes [(T.Text, SchemaType)]
+    | NoInference
 
 -- | CSV read parameters.
 data ReadOptions = ReadOptions
@@ -175,9 +181,9 @@ shouldInferFromSample :: TypeSpec -> Bool
 shouldInferFromSample (InferFromSample _) = True
 shouldInferFromSample _ = False
 
-schemaTypes :: TypeSpec -> [SchemaType]
-schemaTypes (SpecifyTypes xs) = xs
-schemaTypes _ = []
+schemaTypeMap :: TypeSpec -> M.Map T.Text SchemaType
+schemaTypeMap (SpecifyTypes xs) = M.fromList xs
+schemaTypeMap _ = M.empty
 
 typeInferenceSampleSize :: TypeSpec -> Int
 typeInferenceSampleSize (InferFromSample n) = n
@@ -270,46 +276,42 @@ decodeSeparated !opts csvData = do
                 )
 
     (sampleRow, _) <- peekStream rowsToProcess
-    builderCols <- initializeColumns (V.toList sampleRow) opts
+    builderCols <- initializeColumns columnNames (V.toList sampleRow) opts
+    let !builderColsV = V.fromList builderCols
     processStream
         (missingIndicators opts)
         rowsToProcess
-        builderCols
+        builderColsV
         (numColumns opts)
 
-    frozenCols <- V.fromList <$> mapM freezeBuilderColumn builderCols
+    frozenCols <- V.mapM (finalizeBuilderColumn opts) builderColsV
     let numRows = maybe 0 columnLength (frozenCols V.!? 0)
 
-    let df =
-            DataFrame
-                frozenCols
-                (M.fromList (zip columnNames [0 ..]))
-                (numRows, V.length frozenCols)
-                M.empty -- TODO give typed column references
     return $
-        if shouldInferFromSample (typeSpec opts)
-            then
-                parseDefaults
-                    (missingIndicators opts)
-                    (typeInferenceSampleSize (typeSpec opts))
-                    (safeRead opts)
-                    (dateFormat opts)
-                    df
-            else
-                if not (null (schemaTypes (typeSpec opts)))
-                    then parseWithTypes (schemaTypes (typeSpec opts)) df
-                    else df
+        DataFrame
+            frozenCols
+            (M.fromList (zip columnNames [0 ..]))
+            (numRows, V.length frozenCols)
+            M.empty -- TODO give typed column references
 
-initializeColumns :: [BL.ByteString] -> ReadOptions -> IO [BuilderColumn]
-initializeColumns row opts = case typeSpec opts of
-    NoInference -> zipWithM initColumn row (expandTypes [])
-    InferFromSample _ -> zipWithM initColumn row (expandTypes [])
-    SpecifyTypes ts -> zipWithM initColumn row (expandTypes ts)
+initializeColumns ::
+    [T.Text] -> [BL.ByteString] -> ReadOptions -> IO [BuilderColumn]
+initializeColumns names row opts = zipWithM initColumn names (map lookupType names)
   where
-    expandTypes xs = xs ++ replicate (length row - length xs) (schemaType @T.Text)
-    initColumn :: BL.ByteString -> SchemaType -> IO BuilderColumn
-    initColumn _ t = do
+    typeMap = schemaTypeMap (typeSpec opts)
+    -- Return Nothing for columns that should be inferred from BS
+    shouldInfer = case typeSpec opts of
+        InferFromSample _ -> True
+        SpecifyTypes _ -> True
+        NoInference -> False
+    lookupType name = M.lookup name typeMap
+    initColumn :: T.Text -> Maybe SchemaType -> IO BuilderColumn
+    initColumn _ Nothing | shouldInfer = do
         validityRef <- newPagedUnboxedVector
+        BuilderBS <$> newPagedVector <*> pure validityRef
+    initColumn _ mtype = do
+        validityRef <- newPagedUnboxedVector
+        let t = fromMaybe (schemaType @T.Text) mtype
         case t of
             SType (_ :: P.Proxy a) -> case testEquality (typeRep @a) (typeRep @Int) of
                 Just Refl -> BuilderInt <$> newPagedUnboxedVector <*> pure validityRef
@@ -320,7 +322,7 @@ initializeColumns row opts = case typeSpec opts of
 processStream ::
     [T.Text] ->
     CsvStream.Records (V.Vector BL.ByteString) ->
-    [BuilderColumn] ->
+    V.Vector BuilderColumn ->
     Maybe Int ->
     IO ()
 processStream _ _ _ (Just 0) = return ()
@@ -330,11 +332,12 @@ processStream missing (Cons (Right row) rest) cols n =
 processStream missing (Cons (Left err) _) _ _ = error ("CSV Parse Error: " ++ err)
 processStream missing (Nil _ _) _ _ = return ()
 
-processRow :: [T.Text] -> V.Vector BL.ByteString -> [BuilderColumn] -> IO ()
-processRow missing !vals !cols = V.zipWithM_ processValue vals (V.fromList cols)
+processRow ::
+    [T.Text] -> V.Vector BL.ByteString -> V.Vector BuilderColumn -> IO ()
+processRow missing !vals !cols = V.zipWithM_ processValue vals cols
   where
     processValue !bs !col = do
-        let bs' = BL.toStrict bs
+        let !bs' = BL.toStrict bs
         case col of
             BuilderInt gv valid -> case readByteStringInt bs' of
                 Just !i -> appendPagedUnboxedVector gv i >> appendPagedUnboxedVector valid 1
@@ -347,26 +350,147 @@ processRow missing !vals !cols = V.zipWithM_ processValue vals (V.fromList cols)
                 if isNullish val || val `elem` missing
                     then appendPagedVector gv T.empty >> appendPagedUnboxedVector valid 0
                     else appendPagedVector gv val >> appendPagedUnboxedVector valid 1
+            BuilderBS gv valid -> do
+                let !bs'' = C.strip bs'
+                if isNullishBS bs'' || TE.decodeUtf8Lenient bs'' `elem` missing
+                    then appendPagedVector gv BS.empty >> appendPagedUnboxedVector valid 0
+                    else appendPagedVector gv bs'' >> appendPagedUnboxedVector valid 1
 
 freezeBuilderColumn :: BuilderColumn -> IO Column
 freezeBuilderColumn (BuilderInt gv validRef) = do
     vec <- freezePagedUnboxedVector gv
     valid <- freezePagedUnboxedVector validRef
     if VU.all (== 1) valid
-        then return $ UnboxedColumn vec
+        then return $! UnboxedColumn vec
         else constructOptional vec valid
 freezeBuilderColumn (BuilderDouble gv validRef) = do
     vec <- freezePagedUnboxedVector gv
     valid <- freezePagedUnboxedVector validRef
     if VU.all (== 1) valid
-        then return $ UnboxedColumn vec
+        then return $! UnboxedColumn vec
         else constructOptional vec valid
 freezeBuilderColumn (BuilderText gv validRef) = do
     vec <- freezePagedVector gv
     valid <- freezePagedUnboxedVector validRef
     if VU.all (== 1) valid
-        then return $ BoxedColumn vec
+        then return $! BoxedColumn vec
         else constructOptionalBoxed vec valid
+freezeBuilderColumn (BuilderBS _ _) =
+    error
+        "freezeBuilderColumn: BuilderBS must be finalized via finalizeBuilderColumn"
+
+finalizeBuilderColumn :: ReadOptions -> BuilderColumn -> IO Column
+finalizeBuilderColumn opts (BuilderBS gv validRef) = do
+    vec <- freezePagedVector gv
+    valid <- freezePagedUnboxedVector validRef
+    return $! inferColumnFromBS opts vec valid
+finalizeBuilderColumn _ bc = freezeBuilderColumn bc
+
+inferColumnFromBS ::
+    ReadOptions -> V.Vector BS.ByteString -> VU.Vector Word8 -> Column
+inferColumnFromBS opts vec valid =
+    let sampleN = let n = typeInferenceSampleSize (typeSpec opts) in if n == 0 then 100 else n
+        dfmt = dateFormat opts
+        asMaybeFull = V.generate (V.length vec) $ \i ->
+            if valid VU.! i == 1 then Just (vec V.! i) else Nothing
+        samples = V.take sampleN asMaybeFull
+        assumption = makeParsingAssumptionBS dfmt samples
+     in case assumption of
+            IntAssumption -> handleBSInt dfmt asMaybeFull
+            DoubleAssumption -> handleBSDouble asMaybeFull
+            BoolAssumption -> handleBSBool asMaybeFull
+            DateAssumption -> handleBSDate dfmt asMaybeFull
+            TextAssumption -> handleBSText asMaybeFull
+            NoAssumption -> handleBSNo dfmt asMaybeFull
+
+makeParsingAssumptionBS ::
+    String -> V.Vector (Maybe BS.ByteString) -> ParsingAssumption
+makeParsingAssumptionBS dfmt asMaybe
+    | V.all (== Nothing) asMaybe = NoAssumption
+    | vecSameConstructor asMaybe asMaybeBool = BoolAssumption
+    | vecSameConstructor asMaybe asMaybeInt
+        && vecSameConstructor asMaybe asMaybeDouble =
+        IntAssumption
+    | vecSameConstructor asMaybe asMaybeDouble = DoubleAssumption
+    | vecSameConstructor asMaybe asMaybeDate = DateAssumption
+    | otherwise = TextAssumption
+  where
+    asMaybeBool = V.map (>>= readByteStringBool) asMaybe
+    asMaybeInt = V.map (>>= readByteStringInt) asMaybe
+    asMaybeDouble = V.map (>>= readByteStringDouble) asMaybe
+    asMaybeDate = V.map (>>= readByteStringDate dfmt) asMaybe
+
+handleBSBool :: V.Vector (Maybe BS.ByteString) -> Column
+handleBSBool asMaybe
+    | parsableAsBool =
+        maybe (fromVector asMaybeBool) fromVector (sequenceA asMaybeBool)
+    | otherwise = handleBSText asMaybe
+  where
+    asMaybeBool = V.map (>>= readByteStringBool) asMaybe
+    parsableAsBool = vecSameConstructor asMaybe asMaybeBool
+
+handleBSInt :: String -> V.Vector (Maybe BS.ByteString) -> Column
+handleBSInt dfmt asMaybe
+    | parsableAsInt =
+        maybe (fromVector asMaybeInt) fromVector (sequenceA asMaybeInt)
+    | parsableAsDouble =
+        maybe (fromVector asMaybeDouble) fromVector (sequenceA asMaybeDouble)
+    | otherwise = handleBSText asMaybe
+  where
+    asMaybeInt = V.map (>>= readByteStringInt) asMaybe
+    asMaybeDouble = V.map (>>= readByteStringDouble) asMaybe
+    parsableAsInt =
+        vecSameConstructor asMaybe asMaybeInt
+            && vecSameConstructor asMaybe asMaybeDouble
+    parsableAsDouble = vecSameConstructor asMaybe asMaybeDouble
+
+handleBSDouble :: V.Vector (Maybe BS.ByteString) -> Column
+handleBSDouble asMaybe
+    | parsableAsDouble =
+        maybe (fromVector asMaybeDouble) fromVector (sequenceA asMaybeDouble)
+    | otherwise = handleBSText asMaybe
+  where
+    asMaybeDouble = V.map (>>= readByteStringDouble) asMaybe
+    parsableAsDouble = vecSameConstructor asMaybe asMaybeDouble
+
+handleBSDate :: String -> V.Vector (Maybe BS.ByteString) -> Column
+handleBSDate dfmt asMaybe
+    | parsableAsDate =
+        maybe (fromVector asMaybeDate) fromVector (sequenceA asMaybeDate)
+    | otherwise = handleBSText asMaybe
+  where
+    asMaybeDate = V.map (>>= readByteStringDate dfmt) asMaybe
+    parsableAsDate = vecSameConstructor asMaybe asMaybeDate
+
+handleBSText :: V.Vector (Maybe BS.ByteString) -> Column
+handleBSText asMaybe =
+    let asMaybeText = V.map (fmap TE.decodeUtf8Lenient) asMaybe
+     in maybe (fromVector asMaybeText) fromVector (sequenceA asMaybeText)
+
+handleBSNo :: String -> V.Vector (Maybe BS.ByteString) -> Column
+handleBSNo dfmt asMaybe
+    | V.all (== Nothing) asMaybe =
+        fromVector (V.map (const (Nothing :: Maybe T.Text)) asMaybe)
+    | parsableAsBool =
+        maybe (fromVector asMaybeBool) fromVector (sequenceA asMaybeBool)
+    | parsableAsInt =
+        maybe (fromVector asMaybeInt) fromVector (sequenceA asMaybeInt)
+    | parsableAsDouble =
+        maybe (fromVector asMaybeDouble) fromVector (sequenceA asMaybeDouble)
+    | parsableAsDate =
+        maybe (fromVector asMaybeDate) fromVector (sequenceA asMaybeDate)
+    | otherwise = handleBSText asMaybe
+  where
+    asMaybeBool = V.map (>>= readByteStringBool) asMaybe
+    asMaybeInt = V.map (>>= readByteStringInt) asMaybe
+    asMaybeDouble = V.map (>>= readByteStringDouble) asMaybe
+    asMaybeDate = V.map (>>= readByteStringDate dfmt) asMaybe
+    parsableAsBool = vecSameConstructor asMaybe asMaybeBool
+    parsableAsInt =
+        vecSameConstructor asMaybe asMaybeInt
+            && vecSameConstructor asMaybe asMaybeDouble
+    parsableAsDouble = vecSameConstructor asMaybe asMaybeDouble
+    parsableAsDate = vecSameConstructor asMaybe asMaybeDate
 
 constructOptional ::
     (VU.Unbox a, Columnable a) => VU.Vector a -> VU.Vector Word8 -> IO Column
