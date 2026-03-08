@@ -239,6 +239,7 @@ test-suite tests
                    Operations.Statistics,
                    Operations.Take,
                    Operations.Typing,
+                   LazyParquet,
                    Parquet,
                    Properties,
                    Monad
@@ -257,3 +258,4 @@ test-suite tests
                     containers >= 0.6.7 && < 0.9
     hs-source-dirs: tests
     default-language: Haskell2010
+

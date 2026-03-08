@@ -12,6 +12,7 @@ import Test.QuickCheck
 import qualified Functions
 import qualified IO.JSON
 import qualified Internal.Parsing
+import qualified LazyParquet
 import qualified Monad
 import qualified Operations.Aggregations
 import qualified Operations.Apply
@@ -54,6 +55,7 @@ tests =
             ++ Functions.tests
             ++ IO.JSON.tests
             ++ Parquet.tests
+            ++ LazyParquet.tests
 
 isSuccessful :: Result -> Bool
 isSuccessful (Success{..}) = True
