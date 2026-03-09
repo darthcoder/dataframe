@@ -4,6 +4,7 @@ import qualified Data.ByteString as BS
 import Data.Int
 import qualified Data.Text as T
 import Data.Time
+import qualified Data.Vector as V
 
 data ParquetType
     = PBOOLEAN
@@ -178,13 +179,13 @@ data EncryptionAlgorithm
     deriving (Show, Eq)
 
 data DictVals
-    = DBool [Bool]
-    | DInt32 [Int32]
-    | DInt64 [Int64]
-    | DInt96 [UTCTime]
-    | DFloat [Float]
-    | DDouble [Double]
-    | DText [T.Text]
+    = DBool (V.Vector Bool)
+    | DInt32 (V.Vector Int32)
+    | DInt64 (V.Vector Int64)
+    | DInt96 (V.Vector UTCTime)
+    | DFloat (V.Vector Float)
+    | DDouble (V.Vector Double)
+    | DText (V.Vector T.Text)
     deriving (Show, Eq)
 
 data Page = Page

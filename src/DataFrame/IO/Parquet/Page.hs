@@ -10,6 +10,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LB
 import Data.Int
 import Data.Maybe (fromMaybe)
+import qualified Data.Vector.Unboxed as VU
 import DataFrame.IO.Parquet.Binary
 import DataFrame.IO.Parquet.Thrift
 import DataFrame.IO.Parquet.Types
@@ -46,9 +47,9 @@ readPage c columnBytes =
                         drainZstd result BS.empty acc
                     drainZstd (Zstd.Produce chunk next) _ acc = do
                         result <- next
-                        drainZstd result BS.empty (acc <> [chunk])
+                        drainZstd result BS.empty (chunk : acc)
                     drainZstd (Zstd.Done final) _ acc =
-                        pure $ BS.concat (acc <> [final])
+                        pure $ BS.concat (reverse (final : acc))
                     drainZstd (Zstd.Error msg msg2) _ _ =
                         error ("ZSTD error: " ++ msg ++ " " ++ msg2)
                 SNAPPY -> case Snappy.decompress compressed of
@@ -295,6 +296,28 @@ readAllPages codec bytes = go bytes []
                 case maybePage of
                     Nothing -> return (reverse acc)
                     Just page -> go remaining (page : acc)
+
+-- | Read n Int32 values directly into an unboxed vector (no intermediate list).
+readNInt32Vec :: Int -> BS.ByteString -> VU.Vector Int32
+readNInt32Vec n bs = VU.generate n (\i -> littleEndianInt32 (BS.drop (4 * i) bs))
+
+-- | Read n Int64 values directly into an unboxed vector.
+readNInt64Vec :: Int -> BS.ByteString -> VU.Vector Int64
+readNInt64Vec n bs = VU.generate n (\i -> fromIntegral (littleEndianWord64 (BS.drop (8 * i) bs)))
+
+-- | Read n Float values directly into an unboxed vector.
+readNFloatVec :: Int -> BS.ByteString -> VU.Vector Float
+readNFloatVec n bs =
+    VU.generate
+        n
+        (\i -> castWord32ToFloat (littleEndianWord32 (BS.drop (4 * i) bs)))
+
+-- | Read n Double values directly into an unboxed vector.
+readNDoubleVec :: Int -> BS.ByteString -> VU.Vector Double
+readNDoubleVec n bs =
+    VU.generate
+        n
+        (\i -> castWord64ToDouble (littleEndianWord64 (BS.drop (8 * i) bs)))
 
 readNInt32 :: Int -> BS.ByteString -> ([Int32], BS.ByteString)
 readNInt32 0 bs = ([], bs)

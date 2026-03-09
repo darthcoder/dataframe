@@ -1208,6 +1208,34 @@ by wrapping the values in an Either.
 E.g. combining Column containing [1,2] with Column containing ["a","b"]
 will result in a Column containing [Left 1, Left 2, Right "a", Right "b"].
 -}
+
+{- | O(n) Concatenate a list of same-type columns in a single allocation.
+All columns must have the same constructor and element type (as they will
+within a single Parquet column). Calls 'error' on mismatch.
+-}
+concatManyColumns :: [Column] -> Column
+concatManyColumns [] = fromList ([] :: [Maybe Int])
+concatManyColumns [c] = c
+concatManyColumns (c0 : cs) = case c0 of
+    OptionalColumn v0 ->
+        let getVec (OptionalColumn v) = case testEquality (typeOf v0) (typeOf v) of
+                Just Refl -> v
+                Nothing -> error "concatManyColumns: OptionalColumn type mismatch"
+            getVec _ = error "concatManyColumns: column constructor mismatch"
+         in OptionalColumn (VB.concat (v0 : map getVec cs))
+    BoxedColumn v0 ->
+        let getVec (BoxedColumn v) = case testEquality (typeOf v0) (typeOf v) of
+                Just Refl -> v
+                Nothing -> error "concatManyColumns: BoxedColumn type mismatch"
+            getVec _ = error "concatManyColumns: column constructor mismatch"
+         in BoxedColumn (VB.concat (v0 : map getVec cs))
+    UnboxedColumn v0 ->
+        let getVec (UnboxedColumn v) = case testEquality (typeOf v0) (typeOf v) of
+                Just Refl -> v
+                Nothing -> error "concatManyColumns: UnboxedColumn type mismatch"
+            getVec _ = error "concatManyColumns: column constructor mismatch"
+         in UnboxedColumn (VU.concat (v0 : map getVec cs))
+
 concatColumnsEither :: Column -> Column -> Column
 concatColumnsEither (OptionalColumn left) (OptionalColumn right) = case testEquality (typeOf left) (typeOf right) of
     Nothing ->

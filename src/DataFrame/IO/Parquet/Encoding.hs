@@ -1,8 +1,12 @@
+{-# LANGUAGE BangPatterns #-}
+
 module DataFrame.IO.Parquet.Encoding where
 
 import Data.Bits
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Unsafe as BSU
 import Data.List (foldl')
+import qualified Data.Vector.Unboxed as VU
 import Data.Word
 import DataFrame.IO.Parquet.Binary
 
@@ -22,32 +26,26 @@ unpackBitPacked bw count bs
     | count <= 0 = ([], bs)
     | BS.null bs = ([], bs)
     | otherwise =
-        let totalBits = bw * count
-            totalBytes = (totalBits + 7) `div` 8
+        let totalBytes = (bw * count + 7) `div` 8
             chunk = BS.take totalBytes bs
             rest = BS.drop totalBytes bs
-            bits =
-                BS.concatMap
-                    (\b -> BS.map (\i -> (b `shiftR` fromIntegral i) .&. 1) (BS.pack [0 .. 7]))
-                    chunk
-            toN :: BS.ByteString -> Word32
-            toN =
-                fst
-                    . BS.foldl'
-                        (\(a, i) b -> (a .|. (fromIntegral b `shiftL` i), i + 1))
-                        (0 :: Word32, 0 :: Int)
+         in (extractBits bw count chunk, rest)
 
-            extractValues :: Int -> BS.ByteString -> [Word32]
-            extractValues n bitsLeft
-                | BS.null bitsLeft = []
-                | n <= 0 = []
-                | BS.length bitsLeft < bw = []
-                | otherwise =
-                    let (this, bitsLeft') = BS.splitAt bw bitsLeft
-                     in toN this : extractValues (n - 1) bitsLeft'
-
-            vals = extractValues count bits
-         in (vals, rest)
+-- | LSB-first bit accumulator: reads each byte once with no intermediate ByteString allocation.
+extractBits :: Int -> Int -> BS.ByteString -> [Word32]
+extractBits bw count bs = go 0 (0 :: Word64) 0 count
+  where
+    !mask = if bw == 32 then maxBound else (1 `shiftL` bw) - 1 :: Word64
+    !len = BS.length bs
+    go !byteIdx !acc !accBits !remaining
+        | remaining <= 0 = []
+        | accBits >= bw =
+            fromIntegral (acc .&. mask)
+                : go byteIdx (acc `shiftR` bw) (accBits - bw) (remaining - 1)
+        | byteIdx >= len = []
+        | otherwise =
+            let b = fromIntegral (BSU.unsafeIndex bs byteIdx) :: Word64
+             in go (byteIdx + 1) (acc .|. (b `shiftL` accBits)) (accBits + 8) remaining
 
 decodeRLEBitPackedHybrid ::
     Int -> Int -> BS.ByteString -> ([Word32], BS.ByteString)
@@ -81,11 +79,12 @@ decodeRLEBitPackedHybrid bw need bs
                             takeN = min n runLen
                          in go (n - takeN) afterV (replicate takeN val ++ acc)
 
-decodeDictIndicesV1 :: Int -> Int -> BS.ByteString -> ([Int], BS.ByteString)
+decodeDictIndicesV1 ::
+    Int -> Int -> BS.ByteString -> (VU.Vector Int, BS.ByteString)
 decodeDictIndicesV1 need dictCard bs =
     case BS.uncons bs of
         Nothing -> error "empty dictionary index stream"
         Just (w0, rest0) ->
             let bw = fromIntegral w0 :: Int
                 (u32s, rest1) = decodeRLEBitPackedHybrid bw need rest0
-             in (map fromIntegral u32s, rest1)
+             in (VU.fromList (map fromIntegral u32s), rest1)

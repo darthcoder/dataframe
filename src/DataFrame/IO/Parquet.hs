@@ -104,9 +104,31 @@ ghci|   "./tests/data/alltypes_plain.parquet"
 When @selectedColumns@ is set and @predicate@ references other columns, those predicate columns
 are auto-included for decoding, then projected back to the requested output columns.
 -}
+
+{- | Strip Parquet encoding artifact names (REPEATED wrappers and their single
+  list-element children) from a raw column path, leaving user-visible names.
+-}
+cleanColPath :: [SNode] -> [String] -> [String]
+cleanColPath nodes path = go nodes path False
+  where
+    go _ [] _ = []
+    go ns (p : ps) skipThis =
+        case L.find (\n -> sName n == p) ns of
+            Nothing -> []
+            Just n
+                | sRep n == REPEATED && not (null (sChildren n)) ->
+                    let skipChildren = length (sChildren n) == 1
+                     in go (sChildren n) ps skipChildren
+                | skipThis ->
+                    go (sChildren n) ps False
+                | null (sChildren n) ->
+                    [p]
+                | otherwise ->
+                    p : go (sChildren n) ps False
+
 readParquetWithOpts :: ParquetReadOptions -> FilePath -> IO DataFrame
 readParquetWithOpts opts path = do
-    fileMetadata <- readMetadataFromPath path
+    (fileMetadata, contents) <- readMetadataFromPath path
     let columnPaths = getColumnPaths (drop 1 $ schema fileMetadata)
     let columnNames = map fst columnPaths
     let leafNames = map (last . T.splitOn ".") columnNames
@@ -138,9 +160,8 @@ readParquetWithOpts opts path = do
     colMap <- newIORef (M.empty :: M.Map T.Text DI.Column)
     lTypeMap <- newIORef (M.empty :: M.Map T.Text LogicalType)
 
-    contents <- BSO.readFile path
-
     let schemaElements = schema fileMetadata
+    let sNodes = parseAll (drop 1 schemaElements)
     let getTypeLength :: [String] -> Maybe Int32
         getTypeLength path = findTypeLength schemaElements path 0
           where
@@ -159,12 +180,17 @@ readParquetWithOpts opts path = do
         forM_ (zip (rowGroupColumns rowGroup) [0 ..]) $ \(colChunk, colIdx) -> do
             let metadata = columnMetaData colChunk
             let colPath = columnPathInSchema metadata
-            let colName =
-                    if null colPath
+            let cleanPath = cleanColPath sNodes colPath
+            let colLeafName =
+                    if null cleanPath
                         then T.pack $ "col_" ++ show colIdx
-                        else T.pack $ last colPath
+                        else T.pack $ last cleanPath
+            let colFullName =
+                    if null cleanPath
+                        then colLeafName
+                        else T.intercalate "." $ map T.pack cleanPath
 
-            when (shouldReadColumn colName colPath) $ do
+            when (shouldReadColumn colLeafName colPath) $ do
                 let colDataPageOffset = columnDataPageOffset metadata
                 let colDictionaryPageOffset = columnDictionaryPageOffset metadata
                 let colStart =
@@ -186,7 +212,11 @@ readParquetWithOpts opts path = do
 
                 let schemaTail = drop 1 (schema fileMetadata)
                 let (maxDef, maxRep) = levelsForPath schemaTail colPath
-                let lType = logicalType (schemaTail !! colIdx)
+                let lType =
+                        maybe
+                            LOGICAL_TYPE_UNKNOWN
+                            logicalType
+                            (findLeafSchema schemaTail colPath)
                 column <-
                     processColumnPages
                         (maxDef, maxRep)
@@ -196,8 +226,8 @@ readParquetWithOpts opts path = do
                         maybeTypeLength
                         lType
 
-                modifyIORef colMap (M.insertWith DI.concatColumnsEither colName column)
-                modifyIORef lTypeMap (M.insert colName lType)
+                modifyIORef colMap (M.insertWith DI.concatColumnsEither colFullName column)
+                modifyIORef lTypeMap (M.insert colFullName lType)
 
     finalColMap <- readIORef colMap
     finalLTypeMap <- readIORef lTypeMap
@@ -270,12 +300,13 @@ applyReadOptions opts =
         . applySelectedColumns opts
         . applyPredicate opts
 
-readMetadataFromPath :: FilePath -> IO FileMetadata
+readMetadataFromPath :: FilePath -> IO (FileMetadata, BSO.ByteString)
 readMetadataFromPath path = do
     contents <- BSO.readFile path
     let (size, magicString) = contents `seq` readMetadataSizeFromFooter contents
     when (magicString /= "PAR1") $ error "Invalid Parquet file"
-    readMetadata contents size
+    meta <- readMetadata contents size
+    pure (meta, contents)
 
 readMetadataSizeFromFooter :: BSO.ByteString -> (Int, BSO.ByteString)
 readMetadataSizeFromFooter contents =
@@ -292,20 +323,38 @@ readMetadataSizeFromFooter contents =
         (size, magicString)
 
 getColumnPaths :: [SchemaElement] -> [(T.Text, Int)]
-getColumnPaths schema = extractLeafPaths schema 0 []
+getColumnPaths schemaElements =
+    let nodes = parseAll schemaElements
+     in go nodes 0 [] False
   where
-    extractLeafPaths :: [SchemaElement] -> Int -> [T.Text] -> [(T.Text, Int)]
-    extractLeafPaths [] _ _ = []
-    extractLeafPaths (s : ss) idx path
-        | numChildren s == 0 =
-            let fullPath = T.intercalate "." (path ++ [elementName s])
-             in (fullPath, idx) : extractLeafPaths ss (idx + 1) path
+    go [] _ _ _ = []
+    go (n : ns) idx path skipThis
+        | null (sChildren n) =
+            let newPath = if skipThis then path else path ++ [T.pack (sName n)]
+                fullPath = T.intercalate "." newPath
+             in (fullPath, idx) : go ns (idx + 1) path skipThis
+        | sRep n == REPEATED =
+            let skipChildren = length (sChildren n) == 1
+                childLeaves = go (sChildren n) idx path skipChildren
+             in childLeaves ++ go ns (idx + length childLeaves) path skipThis
+        | skipThis =
+            let childLeaves = go (sChildren n) idx path False
+             in childLeaves ++ go ns (idx + length childLeaves) path skipThis
         | otherwise =
-            let newPath = if T.null (elementName s) then path else path ++ [elementName s]
-                childrenCount = fromIntegral (numChildren s)
-                (children, remaining) = splitAt childrenCount ss
-                childResults = extractLeafPaths children idx newPath
-             in childResults ++ extractLeafPaths remaining (idx + length childResults) path
+            let subPath = path ++ [T.pack (sName n)]
+                childLeaves = go (sChildren n) idx subPath False
+             in childLeaves ++ go ns (idx + length childLeaves) path skipThis
+
+findLeafSchema :: [SchemaElement] -> [String] -> Maybe SchemaElement
+findLeafSchema elems path =
+    case go (parseAll elems) path of
+        Just node -> L.find (\e -> T.unpack (elementName e) == sName node) elems
+        Nothing -> Nothing
+  where
+    go [] _ = Nothing
+    go _ [] = Nothing
+    go nodes [p] = L.find (\n -> sName n == p) nodes
+    go nodes (p : ps) = L.find (\n -> sName n == p) nodes >>= \n -> go (sChildren n) ps
 
 processColumnPages ::
     (Int, Int) ->
@@ -337,7 +386,7 @@ processColumnPages (maxDef, maxRep) pages pType _ maybeTypeLength lType = do
             DataPageHeader{..} -> do
                 let n = fromIntegral dataPageHeaderNumValues
                 let bs0 = pageBytes page
-                let (defLvls, _repLvls, afterLvls) = readLevelsV1 n maxDef maxRep bs0
+                let (defLvls, repLvls, afterLvls) = readLevelsV1 n maxDef maxRep bs0
                 let nPresent = length (filter (== maxDef) defLvls)
 
                 case dataPageHeaderEncoding of
@@ -345,41 +394,81 @@ processColumnPages (maxDef, maxRep) pages pType _ maybeTypeLength lType = do
                         case pType of
                             PBOOLEAN ->
                                 let (vals, _) = readNBool nPresent afterLvls
-                                 in pure (toMaybeBool maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepBool maxRep maxDef repLvls defLvls vals
+                                            else toMaybeBool maxDef defLvls vals
+                            PINT32
+                                | maxDef == 0
+                                , maxRep == 0 ->
+                                    pure $ DI.fromUnboxedVector (readNInt32Vec nPresent afterLvls)
                             PINT32 ->
                                 let (vals, _) = readNInt32 nPresent afterLvls
-                                 in pure (toMaybeInt32 maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepInt32 maxRep maxDef repLvls defLvls vals
+                                            else toMaybeInt32 maxDef defLvls vals
+                            PINT64
+                                | maxDef == 0
+                                , maxRep == 0 ->
+                                    pure $ DI.fromUnboxedVector (readNInt64Vec nPresent afterLvls)
                             PINT64 ->
                                 let (vals, _) = readNInt64 nPresent afterLvls
-                                 in pure (toMaybeInt64 maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepInt64 maxRep maxDef repLvls defLvls vals
+                                            else toMaybeInt64 maxDef defLvls vals
                             PINT96 ->
                                 let (vals, _) = readNInt96Times nPresent afterLvls
-                                 in pure (toMaybeUTCTime maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepUTCTime maxRep maxDef repLvls defLvls vals
+                                            else toMaybeUTCTime maxDef defLvls vals
+                            PFLOAT
+                                | maxDef == 0
+                                , maxRep == 0 ->
+                                    pure $ DI.fromUnboxedVector (readNFloatVec nPresent afterLvls)
                             PFLOAT ->
                                 let (vals, _) = readNFloat nPresent afterLvls
-                                 in pure (toMaybeFloat maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepFloat maxRep maxDef repLvls defLvls vals
+                                            else toMaybeFloat maxDef defLvls vals
+                            PDOUBLE
+                                | maxDef == 0
+                                , maxRep == 0 ->
+                                    pure $ DI.fromUnboxedVector (readNDoubleVec nPresent afterLvls)
                             PDOUBLE ->
                                 let (vals, _) = readNDouble nPresent afterLvls
-                                 in pure (toMaybeDouble maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepDouble maxRep maxDef repLvls defLvls vals
+                                            else toMaybeDouble maxDef defLvls vals
                             PBYTE_ARRAY ->
                                 let (raws, _) = readNByteArrays nPresent afterLvls
                                     texts = map decodeUtf8 raws
-                                 in pure (toMaybeText maxDef defLvls texts)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepText maxRep maxDef repLvls defLvls texts
+                                            else toMaybeText maxDef defLvls texts
                             PFIXED_LEN_BYTE_ARRAY ->
                                 case maybeTypeLength of
                                     Just len ->
                                         let (raws, _) = splitFixed nPresent (fromIntegral len) afterLvls
                                             texts = map decodeUtf8 raws
-                                         in pure (toMaybeText maxDef defLvls texts)
+                                         in pure $
+                                                if maxRep > 0
+                                                    then stitchForRepText maxRep maxDef repLvls defLvls texts
+                                                    else toMaybeText maxDef defLvls texts
                                     Nothing -> error "FIXED_LEN_BYTE_ARRAY requires type length"
                             PARQUET_TYPE_UNKNOWN -> error "Cannot read unknown Parquet type"
-                    ERLE_DICTIONARY -> decodeDictV1 dictValsM maxDef defLvls nPresent afterLvls
-                    EPLAIN_DICTIONARY -> decodeDictV1 dictValsM maxDef defLvls nPresent afterLvls
+                    ERLE_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
+                    EPLAIN_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
                     other -> error ("Unsupported v1 encoding: " ++ show other)
             DataPageHeaderV2{..} -> do
                 let n = fromIntegral dataPageHeaderV2NumValues
                 let bs0 = pageBytes page
-                let (defLvls, _repLvls, afterLvls) =
+                let (defLvls, repLvls, afterLvls) =
                         readLevelsV2
                             n
                             maxDef
@@ -397,47 +486,82 @@ processColumnPages (maxDef, maxRep) pages pType _ maybeTypeLength lType = do
                         case pType of
                             PBOOLEAN ->
                                 let (vals, _) = readNBool nPresent afterLvls
-                                 in pure (toMaybeBool maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepBool maxRep maxDef repLvls defLvls vals
+                                            else toMaybeBool maxDef defLvls vals
+                            PINT32
+                                | maxDef == 0
+                                , maxRep == 0 ->
+                                    pure $ DI.fromUnboxedVector (readNInt32Vec nPresent afterLvls)
                             PINT32 ->
                                 let (vals, _) = readNInt32 nPresent afterLvls
-                                 in pure (toMaybeInt32 maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepInt32 maxRep maxDef repLvls defLvls vals
+                                            else toMaybeInt32 maxDef defLvls vals
+                            PINT64
+                                | maxDef == 0
+                                , maxRep == 0 ->
+                                    pure $ DI.fromUnboxedVector (readNInt64Vec nPresent afterLvls)
                             PINT64 ->
                                 let (vals, _) = readNInt64 nPresent afterLvls
-                                 in pure (toMaybeInt64 maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepInt64 maxRep maxDef repLvls defLvls vals
+                                            else toMaybeInt64 maxDef defLvls vals
                             PINT96 ->
                                 let (vals, _) = readNInt96Times nPresent afterLvls
-                                 in pure (toMaybeUTCTime maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepUTCTime maxRep maxDef repLvls defLvls vals
+                                            else toMaybeUTCTime maxDef defLvls vals
+                            PFLOAT
+                                | maxDef == 0
+                                , maxRep == 0 ->
+                                    pure $ DI.fromUnboxedVector (readNFloatVec nPresent afterLvls)
                             PFLOAT ->
                                 let (vals, _) = readNFloat nPresent afterLvls
-                                 in pure (toMaybeFloat maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepFloat maxRep maxDef repLvls defLvls vals
+                                            else toMaybeFloat maxDef defLvls vals
+                            PDOUBLE
+                                | maxDef == 0
+                                , maxRep == 0 ->
+                                    pure $ DI.fromUnboxedVector (readNDoubleVec nPresent afterLvls)
                             PDOUBLE ->
                                 let (vals, _) = readNDouble nPresent afterLvls
-                                 in pure (toMaybeDouble maxDef defLvls vals)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepDouble maxRep maxDef repLvls defLvls vals
+                                            else toMaybeDouble maxDef defLvls vals
                             PBYTE_ARRAY ->
                                 let (raws, _) = readNByteArrays nPresent afterLvls
                                     texts = map decodeUtf8 raws
-                                 in pure (toMaybeText maxDef defLvls texts)
+                                 in pure $
+                                        if maxRep > 0
+                                            then stitchForRepText maxRep maxDef repLvls defLvls texts
+                                            else toMaybeText maxDef defLvls texts
                             PFIXED_LEN_BYTE_ARRAY ->
                                 case maybeTypeLength of
                                     Just len ->
                                         let (raws, _) = splitFixed nPresent (fromIntegral len) afterLvls
                                             texts = map decodeUtf8 raws
-                                         in pure (toMaybeText maxDef defLvls texts)
+                                         in pure $
+                                                if maxRep > 0
+                                                    then stitchForRepText maxRep maxDef repLvls defLvls texts
+                                                    else toMaybeText maxDef defLvls texts
                                     Nothing -> error "FIXED_LEN_BYTE_ARRAY requires type length"
                             PARQUET_TYPE_UNKNOWN -> error "Cannot read unknown Parquet type"
-                    ERLE_DICTIONARY -> decodeDictV1 dictValsM maxDef defLvls nPresent afterLvls
-                    EPLAIN_DICTIONARY -> decodeDictV1 dictValsM maxDef defLvls nPresent afterLvls
+                    ERLE_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
+                    EPLAIN_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
                     other -> error ("Unsupported v2 encoding: " ++ show other)
             -- Cannot happen as these are filtered out by isDataPage above
             DictionaryPageHeader{} -> error "processColumnPages: impossible DictionaryPageHeader"
             INDEX_PAGE_HEADER -> error "processColumnPages: impossible INDEX_PAGE_HEADER"
             PAGE_TYPE_HEADER_UNKNOWN -> error "processColumnPages: impossible PAGE_TYPE_HEADER_UNKNOWN"
-    -- This is N^2. We should probably use mutable columns here.
-    case cols of
-        [] -> pure $ DI.fromList ([] :: [Maybe Int])
-        (c : cs) ->
-            pure $
-                L.foldl' (\l r -> fromRight (error "concat failed") (DI.concatColumns l r)) c cs
+    pure $ DI.concatManyColumns cols
 
 applyLogicalType :: LogicalType -> DI.Column -> DI.Column
 applyLogicalType (TimestampType _ unit) col =

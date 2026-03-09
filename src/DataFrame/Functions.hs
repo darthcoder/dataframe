@@ -18,6 +18,7 @@ module DataFrame.Functions (module DataFrame.Functions, module DataFrame.Operato
 import DataFrame.Internal.Column
 import DataFrame.Internal.DataFrame (
     DataFrame (..),
+    empty,
     unsafeGetColumn,
  )
 import DataFrame.Internal.Expression hiding (normalize)
@@ -46,6 +47,9 @@ import DataFrame.Operators
 import Debug.Trace (trace)
 import Language.Haskell.TH
 import qualified Language.Haskell.TH.Syntax as TH
+import System.Directory (doesDirectoryExist)
+import System.FilePath ((</>))
+import System.FilePath.Glob (glob)
 import Text.Regex.TDFA
 import Prelude hiding (maximum, minimum)
 import Prelude as P
@@ -447,8 +451,23 @@ declareColumnsFromCsvFile path = do
 
 declareColumnsFromParquetFile :: String -> DecsQ
 declareColumnsFromParquetFile path = do
-    metadata <- liftIO (Parquet.readMetadataFromPath path)
-    let df = schemaToEmptyDataFrame (schema metadata)
+    isDir <- liftIO $ doesDirectoryExist path
+
+    let pat = if isDir then path </> "*.parquet" else path
+
+    matches <- liftIO $ glob pat
+
+    files <- liftIO $ filterM (fmap Prelude.not . doesDirectoryExist) matches
+    df <-
+        liftIO $
+            foldM
+                ( \acc p -> do
+                    (metadata, _) <- liftIO (Parquet.readMetadataFromPath path)
+                    let d = schemaToEmptyDataFrame (schema metadata)
+                    pure $ acc <> d
+                )
+                DataFrame.Internal.DataFrame.empty
+                files
     declareColumns df
 
 schemaToEmptyDataFrame :: [SchemaElement] -> DataFrame

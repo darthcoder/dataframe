@@ -1206,7 +1206,7 @@ nullsSnappy =
     TestCase
         ( assertEqual
             "nullsSnappy"
-            (0, 0)
+            (8, 1)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/nulls.snappy.parquet"))
             )
@@ -1228,7 +1228,7 @@ nullableImpala =
     TestCase
         ( assertEqual
             "nullableImpala"
-            (56, 6)
+            (7, 13)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/nullable.impala.parquet"))
             )
@@ -1239,7 +1239,7 @@ nonnullableImpala =
     TestCase
         ( assertEqual
             "nonnullableImpala"
-            (6, 6)
+            (1, 13)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/nonnullable.impala.parquet"))
             )
@@ -1481,7 +1481,7 @@ nestedListsSnappy =
     TestCase
         ( assertEqual
             "nestedListsSnappy"
-            (18, 2)
+            (3, 2)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/nested_lists.snappy.parquet"))
             )
@@ -1492,7 +1492,7 @@ nestedMapsSnappy =
     TestCase
         ( assertEqual
             "nestedMapsSnappy"
-            (15, 4)
+            (6, 5)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/nested_maps.snappy.parquet"))
             )
@@ -1503,7 +1503,7 @@ nestedStructsRust =
     TestCase
         ( assertEqual
             "nestedStructsRust"
-            (0, 0)
+            (1, 216)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/nested_structs.rust.parquet"))
             )
@@ -1514,7 +1514,7 @@ listColumns =
     TestCase
         ( assertEqual
             "listColumns"
-            (14, 1)
+            (3, 2)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/list_columns.parquet"))
             )
@@ -1525,7 +1525,7 @@ oldListStructure =
     TestCase
         ( assertEqual
             "oldListStructure"
-            (4, 1)
+            (1, 1)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/old_list_structure.parquet"))
             )
@@ -1545,10 +1545,12 @@ nullList =
 mapNoValue :: Test
 mapNoValue =
     TestCase
-        ( assertExpectException
+        ( assertEqual
             "mapNoValue"
-            "index too large"
-            (D.readParquet "./tests/data/map_no_value.parquet")
+            (3, 4)
+            ( unsafePerformIO
+                (fmap D.dimensions (D.readParquet "./tests/data/map_no_value.parquet"))
+            )
         )
 
 incorrectMapSchema :: Test
@@ -1556,7 +1558,7 @@ incorrectMapSchema =
     TestCase
         ( assertEqual
             "incorrectMapSchema"
-            (2, 2)
+            (1, 2)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/incorrect_map_schema.parquet"))
             )
@@ -1567,7 +1569,7 @@ repeatedNoAnnotation =
     TestCase
         ( assertEqual
             "repeatedNoAnnotation"
-            (8, 3)
+            (6, 3)
             ( unsafePerformIO
                 (fmap D.dimensions (D.readParquet "./tests/data/repeated_no_annotation.parquet"))
             )
@@ -1578,7 +1580,7 @@ repeatedPrimitiveNoList =
     TestCase
         ( assertEqual
             "repeatedPrimitiveNoList"
-            (10, 2)
+            (4, 4)
             ( unsafePerformIO
                 ( fmap
                     D.dimensions
