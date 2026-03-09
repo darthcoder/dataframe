@@ -22,45 +22,67 @@ import Type.Reflection (typeRep)
 
 type DateFormat = String
 
-parseDefaults :: [T.Text] -> Int -> Bool -> DateFormat -> DataFrame -> DataFrame
-parseDefaults missing n safeRead dateFormat df = df{columns = V.map (parseDefault missing n safeRead dateFormat) (columns df)}
+-- | Options controlling how text columns are parsed into typed values.
+data ParseOptions = ParseOptions
+    { missingValues :: [T.Text]
+    -- ^ Values to treat as @Nothing@ when 'parseSafe' is @True@.
+    , sampleSize :: Int
+    -- ^ Number of rows to inspect when inferring a column's type (0 = all rows).
+    , parseSafe :: Bool
+    {- ^ When @True@, treat 'missingValues' and nullish strings as @Nothing@.
+    When @False@, only empty strings become @Nothing@.
+    -}
+    , parseDateFormat :: DateFormat
+    -- ^ Date format string as accepted by "Data.Time.Format" (e.g. @\"%Y-%m-%d\"@).
+    }
 
-parseDefault :: [T.Text] -> Int -> Bool -> DateFormat -> Column -> Column
-parseDefault missing n safeRead dateFormat (BoxedColumn (c :: V.Vector a)) =
+{- | Sensible out-of-the-box parse options: infer from the first 100 rows,
+  treat common nullish strings as missing, and expect ISO 8601 dates.
+-}
+defaultParseOptions :: ParseOptions
+defaultParseOptions =
+    ParseOptions
+        { missingValues = []
+        , sampleSize = 100
+        , parseSafe = True
+        , parseDateFormat = "%Y-%m-%d"
+        }
+
+parseDefaults :: ParseOptions -> DataFrame -> DataFrame
+parseDefaults opts df = df{columns = V.map (parseDefault opts) (columns df)}
+
+parseDefault :: ParseOptions -> Column -> Column
+parseDefault opts (BoxedColumn (c :: V.Vector a)) =
     case (typeRep @a) `testEquality` (typeRep @T.Text) of
         Nothing -> case (typeRep @a) `testEquality` (typeRep @String) of
-            Just Refl -> parseFromExamples missing n safeRead dateFormat (V.map T.pack c)
+            Just Refl -> parseFromExamples opts (V.map T.pack c)
             Nothing -> BoxedColumn c
-        Just Refl -> parseFromExamples missing n safeRead dateFormat c
-parseDefault missing n safeRead dateFormat (OptionalColumn (c :: V.Vector (Maybe a))) =
+        Just Refl -> parseFromExamples opts c
+parseDefault opts (OptionalColumn (c :: V.Vector (Maybe a))) =
     case (typeRep @a) `testEquality` (typeRep @T.Text) of
         Nothing -> case (typeRep @a) `testEquality` (typeRep @String) of
             Just Refl ->
-                parseFromExamples
-                    missing
-                    n
-                    safeRead
-                    dateFormat
-                    (V.map (T.pack . fromMaybe "") c)
+                parseFromExamples opts (V.map (T.pack . fromMaybe "") c)
             Nothing -> BoxedColumn c
-        Just Refl -> parseFromExamples missing n safeRead dateFormat (V.map (fromMaybe "") c)
-parseDefault _ _ _ _ column = column
+        Just Refl -> parseFromExamples opts (V.map (fromMaybe "") c)
+parseDefault _ column = column
 
-parseFromExamples ::
-    [T.Text] -> Int -> Bool -> DateFormat -> V.Vector T.Text -> Column
-parseFromExamples missing n safeRead dateFormat cols =
+parseFromExamples :: ParseOptions -> V.Vector T.Text -> Column
+parseFromExamples opts cols =
     let
-        converter = if safeRead then convertNullish missing else convertOnlyEmpty
-        examples = V.map converter (V.take n cols)
+        converter =
+            if parseSafe opts then convertNullish (missingValues opts) else convertOnlyEmpty
+        examples = V.map converter (V.take (sampleSize opts) cols)
         asMaybeText = V.map converter cols
+        dfmt = parseDateFormat opts
      in
-        case makeParsingAssumption dateFormat examples of
+        case makeParsingAssumption dfmt examples of
             BoolAssumption -> handleBoolAssumption asMaybeText
             IntAssumption -> handleIntAssumption asMaybeText
             DoubleAssumption -> handleDoubleAssumption asMaybeText
             TextAssumption -> handleTextAssumption asMaybeText
-            DateAssumption -> handleDateAssumption dateFormat asMaybeText
-            NoAssumption -> handleNoAssumption dateFormat asMaybeText
+            DateAssumption -> handleDateAssumption dfmt asMaybeText
+            NoAssumption -> handleNoAssumption dfmt asMaybeText
 
 handleBoolAssumption :: V.Vector (Maybe T.Text) -> Column
 handleBoolAssumption asMaybeText

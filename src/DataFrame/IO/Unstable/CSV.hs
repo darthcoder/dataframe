@@ -53,7 +53,7 @@ import DataFrame.IO.CSV (
     typeInferenceSampleSize,
  )
 import DataFrame.Internal.DataFrame (DataFrame (..))
-import DataFrame.Operations.Typing (parseFromExamples)
+import DataFrame.Operations.Typing (ParseOptions (..), parseFromExamples)
 
 readSeparatedDefaultFast :: Word8 -> FilePath -> IO DataFrame
 readSeparatedDefaultFast separator =
@@ -124,12 +124,14 @@ readSeparated separator opts delimiterIndices filePath = do
                     if shouldInferFromSample (typeSpec opts)
                         then typeInferenceSampleSize (typeSpec opts)
                         else 0
-             in parseFromExamples
-                    (missingIndicators opts)
-                    n
-                    (safeRead opts)
-                    (dateFormat opts)
-                    col
+                parseOpts =
+                    ParseOptions
+                        { missingValues = missingIndicators opts
+                        , sampleSize = n
+                        , parseSafe = safeRead opts
+                        , parseDateFormat = dateFormat opts
+                        }
+             in parseFromExamples parseOpts col
         generateColumn col =
             parseTypes $
                 Vector.fromListN

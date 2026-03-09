@@ -219,6 +219,9 @@ module DataFrame (
     module UnstableCSV,
     module Parquet,
 
+    -- * Type conversion
+    module Typing,
+
     -- * Operations
     module Subset,
     module Transformations,
@@ -364,3 +367,4 @@ import DataFrame.Operations.Subset as Subset (
  )
 import DataFrame.Operations.Transformations as Transformations
 import DataFrame.Operators as Operators
+import DataFrame.Operations.Typing as Typing
