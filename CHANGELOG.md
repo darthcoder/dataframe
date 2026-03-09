@@ -1,5 +1,15 @@
 # Revision history for dataframe
 
+## 0.7.0.0
+* This release adds A LOT of AI code to the repo (which we'll now pause in favour of refactoring, testing, and completeness for 1.0)
+* The lazy reader now has a custom binary format that it spills to. This almost halved the time it takes to run the 1 billion row challenge. The lazy evaluation now also supports Parquet.
+* You can now explicitly set the schema of a subset of columns (named) as opposed to setting a list.
+* Join order is changed from pipelining style to function call style.
+* Bug in division being marked as commutative.
+* Columnable now requires nfdata.
+* Parquet reads are now faster across the board.
+* Better test coverage.
+
 ## 0.6.0.0
 * New typed API see https://dataframe.readthedocs.io/en/latest/using_dataframe_in_a_standalone_script.html
 * Faster joins
