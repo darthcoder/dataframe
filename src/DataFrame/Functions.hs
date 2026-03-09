@@ -462,7 +462,7 @@ declareColumnsFromParquetFile path = do
         liftIO $
             foldM
                 ( \acc p -> do
-                    (metadata, _) <- liftIO (Parquet.readMetadataFromPath path)
+                    (metadata, _) <- liftIO (Parquet.readMetadataFromPath p)
                     let d = schemaToEmptyDataFrame (schema metadata)
                     pure $ acc <> d
                 )

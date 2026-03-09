@@ -18,11 +18,11 @@ instance Semigroup D.DataFrame where
     (<>) a b =
         let
             addColumns a' b' df name
-                | fst (D.dimensions a') == 0 && fst (D.dimensions b') == 0 = df
-                | fst (D.dimensions a') == 0 = fromMaybe df $ do
+                | snd (D.dimensions a') == 0 && snd (D.dimensions b') == 0 = df
+                | snd (D.dimensions a') == 0 = fromMaybe df $ do
                     col <- D.getColumn name b'
                     pure $ D.insertColumn name col df
-                | fst (D.dimensions b') == 0 = fromMaybe df $ do
+                | snd (D.dimensions b') == 0 = fromMaybe df $ do
                     col <- D.getColumn name a'
                     pure $ D.insertColumn name col df
                 | otherwise =
