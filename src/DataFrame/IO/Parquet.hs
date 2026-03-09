@@ -40,6 +40,8 @@ import System.Directory (doesDirectoryExist)
 import qualified Data.Vector.Unboxed as VU
 import System.FilePath ((</>))
 
+-- Options -----------------------------------------------------------------
+
 {- | Options for reading Parquet data.
 
 These options are applied in this order:
@@ -81,6 +83,8 @@ defaultParquetReadOptions =
         , predicate = Nothing
         , rowRange = Nothing
         }
+
+-- Public API --------------------------------------------------------------
 
 {- | Read a parquet file from path and load it into a dataframe.
 
@@ -296,6 +300,8 @@ readParquetFilesWithOpts opts path = do
             dfs <- mapM (readParquetWithOpts optsWithoutRowRange) files
             pure (applyRowRange opts (mconcat dfs))
 
+-- Options application -----------------------------------------------------
+
 applyRowRange :: ParquetReadOptions -> DataFrame -> DataFrame
 applyRowRange opts df =
     maybe df (`DS.range` df) (rowRange opts)
@@ -313,6 +319,8 @@ applyReadOptions opts =
     applyRowRange opts
         . applySelectedColumns opts
         . applyPredicate opts
+
+-- File and metadata parsing -----------------------------------------------
 
 readMetadataFromPath :: FilePath -> IO (FileMetadata, BSO.ByteString)
 readMetadataFromPath path = do
@@ -335,6 +343,8 @@ readMetadataSizeFromFooter contents =
         magicString = BSO.pack magicStringBytes
      in
         (size, magicString)
+
+-- Schema navigation -------------------------------------------------------
 
 getColumnPaths :: [SchemaElement] -> [(T.Text, Int)]
 getColumnPaths schemaElements =
@@ -370,6 +380,8 @@ findLeafSchema elems path =
     go nodes [p] = L.find (\n -> sName n == p) nodes
     go nodes (p : ps) = L.find (\n -> sName n == p) nodes >>= \n -> go (sChildren n) ps
 
+-- Page decoding -----------------------------------------------------------
+
 processColumnPages ::
     (Int, Int) ->
     [Page] ->
@@ -390,99 +402,32 @@ processColumnPages (maxDef, maxRep) pages pType _ maybeTypeLength lType = do
                         DictionaryPageHeader{..} ->
                             let countForBools =
                                     if pType == PBOOLEAN
-                                        then error "is bool" Just dictionaryPageHeaderNumValues
+                                        then Just dictionaryPageHeaderNumValues
                                         else maybeTypeLength
                              in Just (readDictVals pType (pageBytes dictPage) countForBools)
                         _ -> Nothing
 
     cols <- forM dataPages $ \page -> do
+        let bs0 = pageBytes page
         case pageTypeHeader (pageHeader page) of
             DataPageHeader{..} -> do
                 let n = fromIntegral dataPageHeaderNumValues
-                let bs0 = pageBytes page
-                let (defLvls, repLvls, afterLvls) = readLevelsV1 n maxDef maxRep bs0
-                let nPresent = length (filter (== maxDef) defLvls)
-
-                case dataPageHeaderEncoding of
-                    EPLAIN ->
-                        case pType of
-                            PBOOLEAN ->
-                                let (vals, _) = readNBool nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepBool maxRep maxDef repLvls defLvls vals
-                                            else toMaybeBool maxDef defLvls vals
-                            PINT32
-                                | maxDef == 0
-                                , maxRep == 0 ->
-                                    pure $ DI.fromUnboxedVector (readNInt32Vec nPresent afterLvls)
-                            PINT32 ->
-                                let (vals, _) = readNInt32 nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepInt32 maxRep maxDef repLvls defLvls vals
-                                            else toMaybeInt32 maxDef defLvls vals
-                            PINT64
-                                | maxDef == 0
-                                , maxRep == 0 ->
-                                    pure $ DI.fromUnboxedVector (readNInt64Vec nPresent afterLvls)
-                            PINT64 ->
-                                let (vals, _) = readNInt64 nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepInt64 maxRep maxDef repLvls defLvls vals
-                                            else toMaybeInt64 maxDef defLvls vals
-                            PINT96 ->
-                                let (vals, _) = readNInt96Times nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepUTCTime maxRep maxDef repLvls defLvls vals
-                                            else toMaybeUTCTime maxDef defLvls vals
-                            PFLOAT
-                                | maxDef == 0
-                                , maxRep == 0 ->
-                                    pure $ DI.fromUnboxedVector (readNFloatVec nPresent afterLvls)
-                            PFLOAT ->
-                                let (vals, _) = readNFloat nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepFloat maxRep maxDef repLvls defLvls vals
-                                            else toMaybeFloat maxDef defLvls vals
-                            PDOUBLE
-                                | maxDef == 0
-                                , maxRep == 0 ->
-                                    pure $ DI.fromUnboxedVector (readNDoubleVec nPresent afterLvls)
-                            PDOUBLE ->
-                                let (vals, _) = readNDouble nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepDouble maxRep maxDef repLvls defLvls vals
-                                            else toMaybeDouble maxDef defLvls vals
-                            PBYTE_ARRAY ->
-                                let (raws, _) = readNByteArrays nPresent afterLvls
-                                    texts = map decodeUtf8 raws
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepText maxRep maxDef repLvls defLvls texts
-                                            else toMaybeText maxDef defLvls texts
-                            PFIXED_LEN_BYTE_ARRAY ->
-                                case maybeTypeLength of
-                                    Just len ->
-                                        let (raws, _) = splitFixed nPresent (fromIntegral len) afterLvls
-                                            texts = map decodeUtf8 raws
-                                         in pure $
-                                                if maxRep > 0
-                                                    then stitchForRepText maxRep maxDef repLvls defLvls texts
-                                                    else toMaybeText maxDef defLvls texts
-                                    Nothing -> error "FIXED_LEN_BYTE_ARRAY requires type length"
-                            PARQUET_TYPE_UNKNOWN -> error "Cannot read unknown Parquet type"
-                    ERLE_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
-                    EPLAIN_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
-                    other -> error ("Unsupported v1 encoding: " ++ show other)
+                    (defLvls, repLvls, afterLvls) = readLevelsV1 n maxDef maxRep bs0
+                    nPresent = length (filter (== maxDef) defLvls)
+                decodePageData
+                    dictValsM
+                    (maxDef, maxRep)
+                    pType
+                    maybeTypeLength
+                    dataPageHeaderEncoding
+                    defLvls
+                    repLvls
+                    nPresent
+                    afterLvls
+                    "v1"
             DataPageHeaderV2{..} -> do
                 let n = fromIntegral dataPageHeaderV2NumValues
-                let bs0 = pageBytes page
-                let (defLvls, repLvls, afterLvls) =
+                    (defLvls, repLvls, afterLvls) =
                         readLevelsV2
                             n
                             maxDef
@@ -490,92 +435,119 @@ processColumnPages (maxDef, maxRep) pages pType _ maybeTypeLength lType = do
                             definitionLevelByteLength
                             repetitionLevelByteLength
                             bs0
-                let nPresent =
-                        if dataPageHeaderV2NumNulls > 0
-                            then fromIntegral (dataPageHeaderV2NumValues - dataPageHeaderV2NumNulls)
-                            else length (filter (== maxDef) defLvls)
+                    nPresent
+                        | dataPageHeaderV2NumNulls > 0 =
+                            fromIntegral (dataPageHeaderV2NumValues - dataPageHeaderV2NumNulls)
+                        | otherwise = length (filter (== maxDef) defLvls)
+                decodePageData
+                    dictValsM
+                    (maxDef, maxRep)
+                    pType
+                    maybeTypeLength
+                    dataPageHeaderV2Encoding
+                    defLvls
+                    repLvls
+                    nPresent
+                    afterLvls
+                    "v2"
 
-                case dataPageHeaderV2Encoding of
-                    EPLAIN ->
-                        case pType of
-                            PBOOLEAN ->
-                                let (vals, _) = readNBool nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepBool maxRep maxDef repLvls defLvls vals
-                                            else toMaybeBool maxDef defLvls vals
-                            PINT32
-                                | maxDef == 0
-                                , maxRep == 0 ->
-                                    pure $ DI.fromUnboxedVector (readNInt32Vec nPresent afterLvls)
-                            PINT32 ->
-                                let (vals, _) = readNInt32 nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepInt32 maxRep maxDef repLvls defLvls vals
-                                            else toMaybeInt32 maxDef defLvls vals
-                            PINT64
-                                | maxDef == 0
-                                , maxRep == 0 ->
-                                    pure $ DI.fromUnboxedVector (readNInt64Vec nPresent afterLvls)
-                            PINT64 ->
-                                let (vals, _) = readNInt64 nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepInt64 maxRep maxDef repLvls defLvls vals
-                                            else toMaybeInt64 maxDef defLvls vals
-                            PINT96 ->
-                                let (vals, _) = readNInt96Times nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepUTCTime maxRep maxDef repLvls defLvls vals
-                                            else toMaybeUTCTime maxDef defLvls vals
-                            PFLOAT
-                                | maxDef == 0
-                                , maxRep == 0 ->
-                                    pure $ DI.fromUnboxedVector (readNFloatVec nPresent afterLvls)
-                            PFLOAT ->
-                                let (vals, _) = readNFloat nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepFloat maxRep maxDef repLvls defLvls vals
-                                            else toMaybeFloat maxDef defLvls vals
-                            PDOUBLE
-                                | maxDef == 0
-                                , maxRep == 0 ->
-                                    pure $ DI.fromUnboxedVector (readNDoubleVec nPresent afterLvls)
-                            PDOUBLE ->
-                                let (vals, _) = readNDouble nPresent afterLvls
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepDouble maxRep maxDef repLvls defLvls vals
-                                            else toMaybeDouble maxDef defLvls vals
-                            PBYTE_ARRAY ->
-                                let (raws, _) = readNByteArrays nPresent afterLvls
-                                    texts = map decodeUtf8 raws
-                                 in pure $
-                                        if maxRep > 0
-                                            then stitchForRepText maxRep maxDef repLvls defLvls texts
-                                            else toMaybeText maxDef defLvls texts
-                            PFIXED_LEN_BYTE_ARRAY ->
-                                case maybeTypeLength of
-                                    Just len ->
-                                        let (raws, _) = splitFixed nPresent (fromIntegral len) afterLvls
-                                            texts = map decodeUtf8 raws
-                                         in pure $
-                                                if maxRep > 0
-                                                    then stitchForRepText maxRep maxDef repLvls defLvls texts
-                                                    else toMaybeText maxDef defLvls texts
-                                    Nothing -> error "FIXED_LEN_BYTE_ARRAY requires type length"
-                            PARQUET_TYPE_UNKNOWN -> error "Cannot read unknown Parquet type"
-                    ERLE_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
-                    EPLAIN_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
-                    other -> error ("Unsupported v2 encoding: " ++ show other)
             -- Cannot happen as these are filtered out by isDataPage above
             DictionaryPageHeader{} -> error "processColumnPages: impossible DictionaryPageHeader"
             INDEX_PAGE_HEADER -> error "processColumnPages: impossible INDEX_PAGE_HEADER"
             PAGE_TYPE_HEADER_UNKNOWN -> error "processColumnPages: impossible PAGE_TYPE_HEADER_UNKNOWN"
     pure $ DI.concatManyColumns cols
+
+decodePageData ::
+    Maybe DictVals ->
+    (Int, Int) ->
+    ParquetType ->
+    Maybe Int32 ->
+    ParquetEncoding ->
+    [Int] ->
+    [Int] ->
+    Int ->
+    BSO.ByteString ->
+    String ->
+    IO DI.Column
+decodePageData dictValsM (maxDef, maxRep) pType maybeTypeLength encoding defLvls repLvls nPresent afterLvls versionLabel =
+    case encoding of
+        EPLAIN ->
+            case pType of
+                PBOOLEAN ->
+                    let (vals, _) = readNBool nPresent afterLvls
+                     in pure $
+                            if maxRep > 0
+                                then stitchForRepBool maxRep maxDef repLvls defLvls vals
+                                else toMaybeBool maxDef defLvls vals
+                PINT32
+                    | maxDef == 0
+                    , maxRep == 0 ->
+                        pure $ DI.fromUnboxedVector (readNInt32Vec nPresent afterLvls)
+                PINT32 ->
+                    let (vals, _) = readNInt32 nPresent afterLvls
+                     in pure $
+                            if maxRep > 0
+                                then stitchForRepInt32 maxRep maxDef repLvls defLvls vals
+                                else toMaybeInt32 maxDef defLvls vals
+                PINT64
+                    | maxDef == 0
+                    , maxRep == 0 ->
+                        pure $ DI.fromUnboxedVector (readNInt64Vec nPresent afterLvls)
+                PINT64 ->
+                    let (vals, _) = readNInt64 nPresent afterLvls
+                     in pure $
+                            if maxRep > 0
+                                then stitchForRepInt64 maxRep maxDef repLvls defLvls vals
+                                else toMaybeInt64 maxDef defLvls vals
+                PINT96 ->
+                    let (vals, _) = readNInt96Times nPresent afterLvls
+                     in pure $
+                            if maxRep > 0
+                                then stitchForRepUTCTime maxRep maxDef repLvls defLvls vals
+                                else toMaybeUTCTime maxDef defLvls vals
+                PFLOAT
+                    | maxDef == 0
+                    , maxRep == 0 ->
+                        pure $ DI.fromUnboxedVector (readNFloatVec nPresent afterLvls)
+                PFLOAT ->
+                    let (vals, _) = readNFloat nPresent afterLvls
+                     in pure $
+                            if maxRep > 0
+                                then stitchForRepFloat maxRep maxDef repLvls defLvls vals
+                                else toMaybeFloat maxDef defLvls vals
+                PDOUBLE
+                    | maxDef == 0
+                    , maxRep == 0 ->
+                        pure $ DI.fromUnboxedVector (readNDoubleVec nPresent afterLvls)
+                PDOUBLE ->
+                    let (vals, _) = readNDouble nPresent afterLvls
+                     in pure $
+                            if maxRep > 0
+                                then stitchForRepDouble maxRep maxDef repLvls defLvls vals
+                                else toMaybeDouble maxDef defLvls vals
+                PBYTE_ARRAY ->
+                    let (raws, _) = readNByteArrays nPresent afterLvls
+                        texts = map decodeUtf8Lenient raws
+                     in pure $
+                            if maxRep > 0
+                                then stitchForRepText maxRep maxDef repLvls defLvls texts
+                                else toMaybeText maxDef defLvls texts
+                PFIXED_LEN_BYTE_ARRAY ->
+                    case maybeTypeLength of
+                        Just len ->
+                            let (raws, _) = splitFixed nPresent (fromIntegral len) afterLvls
+                                texts = map decodeUtf8Lenient raws
+                             in pure $
+                                    if maxRep > 0
+                                        then stitchForRepText maxRep maxDef repLvls defLvls texts
+                                        else toMaybeText maxDef defLvls texts
+                        Nothing -> error "FIXED_LEN_BYTE_ARRAY requires type length"
+                PARQUET_TYPE_UNKNOWN -> error "Cannot read unknown Parquet type"
+        ERLE_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
+        EPLAIN_DICTIONARY -> decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent afterLvls
+        other -> error ("Unsupported " ++ versionLabel ++ " encoding: " ++ show other)
+
+-- Logical type conversion -------------------------------------------------
 
 applyLogicalType :: LogicalType -> DI.Column -> DI.Column
 applyLogicalType (TimestampType _ unit) col =

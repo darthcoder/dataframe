@@ -63,7 +63,7 @@ readPageBytes xs
     | otherwise =
         let lenBytes = fromIntegral (littleEndianInt32 $ BS.take 4 xs)
             totalBytesRead = lenBytes + 4
-         in decodeUtf8 (BS.take lenBytes (BS.drop 4 xs))
+         in decodeUtf8Lenient (BS.take lenBytes (BS.drop 4 xs))
                 : readPageBytes (BS.drop totalBytesRead xs)
 
 readPageBool :: BS.ByteString -> [Bool]
@@ -103,7 +103,7 @@ readPageFixedBytes :: BS.ByteString -> Int -> [T.Text]
 readPageFixedBytes xs len
     | BS.null xs = []
     | otherwise =
-        decodeUtf8 (BS.take len xs) : readPageFixedBytes (BS.drop len xs) len
+        decodeUtf8Lenient (BS.take len xs) : readPageFixedBytes (BS.drop len xs) len
 
 {- | Dispatch to the right multi-level list stitching function.
 For maxRep=1 uses stitchList; for 2/3 uses stitchList2/3 with computed thresholds.
