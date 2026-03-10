@@ -221,7 +221,8 @@ defaultReadOptions =
         , dateFormat = "%Y-%m-%d"
         , columnSeparator = ','
         , numColumns = Nothing
-        , missingIndicators = ["Nothing", "NULL", "", " ", "nan", "null", "N/A", "NaN", "NAN", "NA"]
+        , missingIndicators =
+            ["Nothing", "NULL", "", " ", "nan", "null", "N/A", "NaN", "NAN", "NA"]
         }
 
 {- | Read CSV file from path and load it into a dataframe.
