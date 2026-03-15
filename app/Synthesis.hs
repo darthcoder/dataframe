@@ -99,12 +99,32 @@ computeAccuracy :: D.DataFrame -> Double
 computeAccuracy df =
     let
         tp =
-            fromIntegral $ D.nRows (D.filterWhere (survived .== 1 .&& prediction .== 1) df)
+            fromIntegral $
+                D.nRows
+                    ( D.filterWhere
+                        (survived .== F.lit (1 :: Int) .&& prediction .== F.lit (1 :: Int))
+                        df
+                    )
         tn =
-            fromIntegral $ D.nRows (D.filterWhere (survived .== 0 .&& prediction .== 0) df)
+            fromIntegral $
+                D.nRows
+                    ( D.filterWhere
+                        (survived .== F.lit (0 :: Int) .&& prediction .== F.lit (0 :: Int))
+                        df
+                    )
         fp =
-            fromIntegral $ D.nRows (D.filterWhere (survived .== 0 .&& prediction .== 1) df)
+            fromIntegral $
+                D.nRows
+                    ( D.filterWhere
+                        (survived .== F.lit (0 :: Int) .&& prediction .== F.lit (1 :: Int))
+                        df
+                    )
         fn =
-            fromIntegral $ D.nRows (D.filterWhere (survived .== 1 .&& prediction .== 0) df)
+            fromIntegral $
+                D.nRows
+                    ( D.filterWhere
+                        (survived .== F.lit (1 :: Int) .&& prediction .== F.lit (0 :: Int))
+                        df
+                    )
      in
         (tp + tn) / (tp + tn + fp + fn)

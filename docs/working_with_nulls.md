@@ -15,7 +15,7 @@ import qualified DataFrame.Internal.Column as DI
 df :: D.DataFrame
 df = D.fromNamedColumns
     [ ("id",    DI.fromList [1, 2, 3 :: Int])
-    , ("score", DI.OptionalColumn (V.fromList [Just 90, Nothing, Just 75 :: Maybe Int]))
+    , ("score", DI.fromList [Just 90, Nothing, Just 75 :: Maybe Int])
     ]
 ```
 
@@ -173,7 +173,7 @@ D.derive "maybe_id" (F.cast @(Maybe Int) Nothing "id") df
 -- if "id" is plain Int, each value is wrapped in Just
 ```
 
-`F.coerce` strips `Maybe` when you know (at runtime) there are no `Nothing` values:
+`F.unsafeCast` strips `Maybe` when you know (at runtime) there are no `Nothing` values:
 
 ```haskell
 D.derive "bare_score" (F.coerce @Int "score") df

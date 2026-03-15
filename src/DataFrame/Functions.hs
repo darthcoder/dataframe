@@ -29,6 +29,7 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.Char as Char
+import Data.Either
 import Data.Function
 import Data.Functor
 import Data.Int
