@@ -18,6 +18,8 @@ tested-with: GHC ==9.4.8 || ==9.6.7 || ==9.8.4 || ==9.10.3 || ==9.12.2
 extra-doc-files: CHANGELOG.md README.md
 extra-source-files: cbits/process_csv.h
                     cbits/arrow_abi.h
+                    cbits/dataframe_arrow.h
+                    cbits/rts_init.c
                     data/titanic/*.csv
                     tests/data/*.csv
                     tests/data/*.tsv
