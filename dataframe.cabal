@@ -17,6 +17,7 @@ category: Data
 tested-with: GHC ==9.4.8 || ==9.6.7 || ==9.8.4 || ==9.10.3 || ==9.12.2
 extra-doc-files: CHANGELOG.md README.md
 extra-source-files: cbits/process_csv.h
+                    cbits/arrow_abi.h
                     data/titanic/*.csv
                     tests/data/*.csv
                     tests/data/*.tsv
@@ -148,6 +149,27 @@ library
     install-includes: process_csv.h
     default-language: Haskell2010
 
+foreign-library dataframe-arrow
+    type:             native-shared
+    hs-source-dirs:   ffi
+    other-modules:    DataFrame.FFI
+                      DataFrame.IO.Arrow
+                      DataFrame.IR
+    build-depends:
+        base        >= 4   && < 5,
+        dataframe   >= 0.7 && < 1,
+        text        >= 2.0 && < 3,
+        aeson       >= 0.11 && < 3,
+        bytestring  >= 0.11 && < 0.13,
+        containers  >= 0.6.7 && < 0.9,
+        vector      ^>= 0.13
+    c-sources:        cbits/rts_init.c
+    include-dirs:     cbits
+    includes:         arrow_abi.h dataframe_arrow.h
+    install-includes: arrow_abi.h dataframe_arrow.h
+    ghc-options:      -threaded
+    default-language: Haskell2010
+
 executable dataframe-benchmark-example
     import: warnings
     main-is: Benchmark.hs
@@ -262,4 +284,3 @@ test-suite tests
                     containers >= 0.6.7 && < 0.9
     hs-source-dirs: tests
     default-language: Haskell2010
-
