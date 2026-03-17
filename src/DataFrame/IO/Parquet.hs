@@ -13,7 +13,7 @@ import Data.Either
 import Data.IORef
 import Data.Int
 import qualified Data.List as L
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import Data.Text.Encoding
@@ -37,7 +37,9 @@ import DataFrame.IO.Parquet.Types
 import System.Directory (doesDirectoryExist)
 
 import qualified Data.Vector.Unboxed as VU
+import DataFrame.IO.Parquet.Seeking
 import System.FilePath ((</>))
+import System.IO (IOMode (ReadMode))
 
 -- Options -----------------------------------------------------------------
 
@@ -130,8 +132,13 @@ cleanColPath nodes path = go nodes path False
                     p : go (sChildren n) ps False
 
 readParquetWithOpts :: ParquetReadOptions -> FilePath -> IO DataFrame
-readParquetWithOpts opts path = do
-    (fileMetadata, contents) <- readMetadataFromPath path
+readParquetWithOpts = _readParquetWithOpts Nothing
+
+-- | Internal function to pass testing parameters
+_readParquetWithOpts ::
+    ForceNonSeekable -> ParquetReadOptions -> FilePath -> IO DataFrame
+_readParquetWithOpts extraConfig opts path = withFileBufferedOrSeekable extraConfig path ReadMode $ \file -> do
+    fileMetadata <- readMetadataFromHandle file
     let columnPaths = getColumnPaths (drop 1 $ schema fileMetadata)
     let columnNames = map fst columnPaths
     let leafNames = map (last . T.splitOn ".") columnNames
@@ -204,7 +211,11 @@ readParquetWithOpts opts path = do
                             else colDataPageOffset
                 let colLength = columnTotalCompressedSize metadata
 
-                let columnBytes = BSO.take (fromIntegral colLength) (BSO.drop (fromIntegral colStart) contents)
+                columnBytes <-
+                    seekAndReadBytes
+                        (Just (AbsoluteSeek, fromIntegral colStart))
+                        (fromIntegral colLength)
+                        file
 
                 pages <- readAllPages (columnCodec metadata) columnBytes
 
@@ -236,13 +247,13 @@ readParquetWithOpts opts path = do
                     Nothing -> do
                         mc <- DI.newMutableColumn totalRows column
                         DI.copyIntoMutableColumn mc 0 column
-                        modifyIORef colMutMap (M.insert colFullName mc)
-                        modifyIORef colOffMap (M.insert colFullName (DI.columnLength column))
+                        modifyIORef' colMutMap (M.insert colFullName mc)
+                        modifyIORef' colOffMap (M.insert colFullName (DI.columnLength column))
                     Just mc -> do
                         off <- (M.! colFullName) <$> readIORef colOffMap
                         DI.copyIntoMutableColumn mc off column
-                        modifyIORef colOffMap (M.adjust (+ DI.columnLength column) colFullName)
-                modifyIORef lTypeMap (M.insert colFullName lType)
+                        modifyIORef' colOffMap (M.adjust (+ DI.columnLength column) colFullName)
+                modifyIORef' lTypeMap (M.insert colFullName lType)
 
     finalMutMap <- readIORef colMutMap
     finalColMap <-
@@ -321,23 +332,34 @@ applyReadOptions opts =
 
 -- File and metadata parsing -----------------------------------------------
 
+-- | read the file in memory at once, parse magicString and return the entire file ByteString
 readMetadataFromPath :: FilePath -> IO (FileMetadata, BSO.ByteString)
 readMetadataFromPath path = do
     contents <- BSO.readFile path
-    let (size, magicString) = contents `seq` readMetadataSizeFromFooter contents
+    let (size, magicString) = readMetadataSizeFromFooter contents
     when (magicString /= "PAR1") $ error "Invalid Parquet file"
     meta <- readMetadata contents size
     pure (meta, contents)
 
-readMetadataSizeFromFooter :: BSO.ByteString -> (Int, BSO.ByteString)
-readMetadataSizeFromFooter contents =
+-- | read from the end of the file, parse magicString and return the entire file ByteString
+readMetadataFromHandle :: FileBufferedOrSeekable -> IO FileMetadata
+readMetadataFromHandle sh = do
+    footerBs <- readLastBytes (fromIntegral footerSize) sh
+    let (size, magicString) = readMetadataSizeFromFooterSlice footerBs
+    when (magicString /= "PAR1") $ error "Invalid Parquet file"
+    readMetadataByHandleMetaSize sh size
+
+-- | Takes the last 8 bit of the file to parse metadata size and magic string
+readMetadataSizeFromFooterSlice :: BSO.ByteString -> (Int, BSO.ByteString)
+readMetadataSizeFromFooterSlice contents =
     let
-        footerOffSet = BSO.length contents - 8
-        footer = BSO.drop footerOffSet contents
-        size = fromIntegral (littleEndianWord32 footer)
-        magicString = BSO.take 4 (BSO.drop 4 footer)
+        size = fromIntegral (littleEndianWord32 contents)
+        magicString = BSO.take 4 (BSO.drop 4 contents)
      in
         (size, magicString)
+
+readMetadataSizeFromFooter :: BSO.ByteString -> (Int, BSO.ByteString)
+readMetadataSizeFromFooter = readMetadataSizeFromFooterSlice . BSO.takeEnd 8
 
 -- Schema navigation -------------------------------------------------------
 

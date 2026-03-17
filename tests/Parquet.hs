@@ -6,6 +6,7 @@ module Parquet where
 import Assertions (assertExpectException)
 import qualified DataFrame as D
 import qualified DataFrame.Functions as F
+import qualified DataFrame.IO.Parquet as DP
 
 import qualified Data.ByteString as BS
 import Data.Int
@@ -61,13 +62,20 @@ allTypes =
             )
         ]
 
+testBothReadParquetPaths :: ((FilePath -> IO D.DataFrame) -> Test) -> Test
+testBothReadParquetPaths test =
+    TestList
+        [ test D.readParquet
+        , test (DP._readParquetWithOpts (Just True) D.defaultParquetReadOptions)
+        ]
+
 allTypesPlain :: Test
-allTypesPlain =
+allTypesPlain = testBothReadParquetPaths $ \readParquet ->
     TestCase
         ( assertEqual
             "allTypesPlain"
             allTypes
-            (unsafePerformIO (D.readParquet "./tests/data/alltypes_plain.parquet"))
+            (unsafePerformIO (readParquet "./tests/data/alltypes_plain.parquet"))
         )
 
 allTypesTinyPagesDimensions :: Test
@@ -163,7 +171,7 @@ tinyPagesLast10 =
         ]
 
 allTypesTinyPagesLastFew :: Test
-allTypesTinyPagesLastFew =
+allTypesTinyPagesLastFew = testBothReadParquetPaths $ \readParquet ->
     TestCase
         ( assertEqual
             "allTypesTinyPages dimensions"
@@ -172,27 +180,27 @@ allTypesTinyPagesLastFew =
                 -- Excluding doubles because they are weird to compare.
                 ( fmap
                     (D.takeLast 10 . D.exclude ["double_col"])
-                    (D.readParquet "./tests/data/alltypes_tiny_pages.parquet")
+                    (readParquet "./tests/data/alltypes_tiny_pages.parquet")
                 )
             )
         )
 
 allTypesPlainSnappy :: Test
-allTypesPlainSnappy =
+allTypesPlainSnappy = testBothReadParquetPaths $ \readParquet ->
     TestCase
         ( assertEqual
             "allTypesPlainSnappy"
             (D.filter (F.col @Int32 "id") (`elem` [6, 7]) allTypes)
-            (unsafePerformIO (D.readParquet "./tests/data/alltypes_plain.snappy.parquet"))
+            (unsafePerformIO (readParquet "./tests/data/alltypes_plain.snappy.parquet"))
         )
 
 allTypesDictionary :: Test
-allTypesDictionary =
+allTypesDictionary = testBothReadParquetPaths $ \readParquet ->
     TestCase
         ( assertEqual
             "allTypesPlainSnappy"
             (D.filter (F.col @Int32 "id") (`elem` [0, 1]) allTypes)
-            (unsafePerformIO (D.readParquet "./tests/data/alltypes_dictionary.parquet"))
+            (unsafePerformIO (readParquet "./tests/data/alltypes_dictionary.parquet"))
         )
 
 selectedColumnsWithOpts :: Test
@@ -468,12 +476,12 @@ transactions =
         ]
 
 transactionsTest :: Test
-transactionsTest =
+transactionsTest = testBothReadParquetPaths $ \readParquet ->
     TestCase
         ( assertEqual
             "transactions"
             transactions
-            (unsafePerformIO (D.readParquet "./tests/data/transactions.parquet"))
+            (unsafePerformIO (readParquet "./tests/data/transactions.parquet"))
         )
 
 mtCarsDataset :: D.DataFrame
