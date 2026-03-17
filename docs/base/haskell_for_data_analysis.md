@@ -2,7 +2,6 @@
 
 This guide ports and extends Wes McKinney's [Python for Data Analysis](https://wesmckinney.com/book/). Examples and organisation are drawn from there. No prior Haskell knowledge is assumed.
 
-
 ```haskell
 -- cabal: build-depends: dataframe-0.7.0.0, text, granite
 -- cabal: default-extensions: TemplateHaskell, TypeApplications, OverloadedStrings, DataKinds
@@ -17,9 +16,6 @@ import Granite.Svg
 import DataFrame.Operators
 import DataFrame.Operations.Merge ()
 ```
-
-> <!-- sabela:mime text/plain -->
-
 
 ---
 
@@ -63,7 +59,6 @@ Data enters a program in one of two ways: you type it in by hand, or you read it
 
 Suppose you want to track a week of Seattle temperatures (a legitimate non-small-talk topic there). The dataset is small enough to type by hand.
 
-
 ```haskell
 weather = D.fromNamedColumns
     [ ("Day",                      D.fromList ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday" :: T.Text])
@@ -74,20 +69,7 @@ weather = D.fromNamedColumns
 TIO.putStrLn $ D.toMarkdownTable weather
 ```
 
-> <!-- sabela:mime text/plain -->
-> | Day<br>Text | High Temperature (C)<br>Double | Low Temperature (C)<br>Double |
-> | ------------|--------------------------------|------------------------------ |
-> | Monday      | 24.0                           | 14.0                          |
-> | Tuesday     | 20.0                           | 13.0                          |
-> | Wednesday   | 22.0                           | 13.0                          |
-> | Thursday    | 23.0                           | 13.0                          |
-> | Friday      | 25.0                           | 14.0                          |
-> | Saturday    | 26.0                           | 15.0                          |
-> | Sunday      | 26.0                           | 15.0                          |
-
-
 `fromNamedColumns` takes a list of `(name, column)` pairs. For data without column names there is `fromUnnamedColumns`, which assigns numeric names automatically.
-
 
 ```haskell
 weatherUnnamed = D.fromUnnamedColumns
@@ -99,40 +81,17 @@ weatherUnnamed = D.fromUnnamedColumns
 TIO.putStrLn $ D.toMarkdownTable weatherUnnamed
 ```
 
-> <!-- sabela:mime text/plain -->
-> | 0<br>Text | 1<br>Double | 2<br>Double |
-> | ----------|-------------|------------ |
-> | Monday    | 24.0        | 14.0        |
-> | Tuesday   | 20.0        | 13.0        |
-> | Wednesday | 22.0        | 13.0        |
-> | Thursday  | 23.0        | 13.0        |
-> | Friday    | 25.0        | 14.0        |
-> | Saturday  | 26.0        | 15.0        |
-> | Sunday    | 26.0        | 15.0        |
-
-
 Numeric column names are fine for a quick sanity-check, but always give your columns descriptive names before doing real analysis.
 
 ### Reading from a file
 
 Most data lives in files. CSV (comma-separated values) is the most common format.
 
-
 ```haskell
 housing <- D.readCsv "../data/housing.csv"
 
 TIO.putStrLn $ D.toMarkdownTable (D.take 5 housing)
 ```
-
-> <!-- sabela:mime text/plain -->
-> | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Maybe Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double | ocean_proximity<br>Text |
-> | --------------------|--------------------|------------------------------|-----------------------|--------------------------------|----------------------|----------------------|-------------------------|------------------------------|------------------------ |
-> | -122.23             | 37.88              | 41.0                         | 880.0                 | Just 129.0                     | 322.0                | 126.0                | 8.3252                  | 452600.0                     | NEAR BAY                |
-> | -122.22             | 37.86              | 21.0                         | 7099.0                | Just 1106.0                    | 2401.0               | 1138.0               | 8.3014                  | 358500.0                     | NEAR BAY                |
-> | -122.24             | 37.85              | 52.0                         | 1467.0                | Just 190.0                     | 496.0                | 177.0                | 7.2574                  | 352100.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 1274.0                | Just 235.0                     | 558.0                | 219.0                | 5.6431000000000004      | 341300.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 1627.0                | Just 280.0                     | 565.0                | 259.0                | 3.8462                  | 342200.0                     | NEAR BAY                |
-
 
 `take n df` keeps the first `n` rows. It is the quickest way to eyeball a fresh dataset.
 
@@ -142,7 +101,6 @@ The type of `D.take` is `Int -> DataFrame -> DataFrame` — an integer in, a dat
 
 `F.col @Type "colName"` tells the compiler what type to expect in a column. If you get the type wrong you hear about it immediately.
 
-
 ```haskell
 -- Runtime-checked (flexible):
 D.mean (F.col @Double "High Temperature (C)") weather
@@ -151,11 +109,6 @@ D.mean (F.col @Double "High Temperature (C)") weather
 $(F.declareColumns weather)
 D.mean high_temperature_c weather
 ```
-
-> <!-- sabela:mime text/plain -->
-> 23.714285714285715
-> 23.714285714285715
-
 
 The `$(F.declareColumns df)` splice inspects the dataframe at compile time and generates one typed binding per column (column names are sanitised into valid Haskell identifiers). If you try to use a column that does not exist, the program will not compile.
 
@@ -173,86 +126,27 @@ Three functions cover most of this ground:
 
 ### take and takeLast
 
-
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable (D.take 10 housing)
 ```
-
-> <!-- sabela:mime text/plain -->
-> | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Maybe Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double | ocean_proximity<br>Text |
-> | --------------------|--------------------|------------------------------|-----------------------|--------------------------------|----------------------|----------------------|-------------------------|------------------------------|------------------------ |
-> | -122.23             | 37.88              | 41.0                         | 880.0                 | Just 129.0                     | 322.0                | 126.0                | 8.3252                  | 452600.0                     | NEAR BAY                |
-> | -122.22             | 37.86              | 21.0                         | 7099.0                | Just 1106.0                    | 2401.0               | 1138.0               | 8.3014                  | 358500.0                     | NEAR BAY                |
-> | -122.24             | 37.85              | 52.0                         | 1467.0                | Just 190.0                     | 496.0                | 177.0                | 7.2574                  | 352100.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 1274.0                | Just 235.0                     | 558.0                | 219.0                | 5.6431000000000004      | 341300.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 1627.0                | Just 280.0                     | 565.0                | 259.0                | 3.8462                  | 342200.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 919.0                 | Just 213.0                     | 413.0                | 193.0                | 4.0368                  | 269700.0                     | NEAR BAY                |
-> | -122.25             | 37.84              | 52.0                         | 2535.0                | Just 489.0                     | 1094.0               | 514.0                | 3.6591                  | 299200.0                     | NEAR BAY                |
-> | -122.25             | 37.84              | 52.0                         | 3104.0                | Just 687.0                     | 1157.0               | 647.0                | 3.12                    | 241400.0                     | NEAR BAY                |
-> | -122.26             | 37.84              | 42.0                         | 2555.0                | Just 665.0                     | 1206.0               | 595.0                | 2.0804                  | 226700.0                     | NEAR BAY                |
-> | -122.25             | 37.84              | 52.0                         | 3549.0                | Just 707.0                     | 1551.0               | 714.0                | 3.6912000000000003      | 261100.0                     | NEAR BAY                |
-
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable (D.takeLast 5 housing)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Maybe Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double | ocean_proximity<br>Text |
-> | --------------------|--------------------|------------------------------|-----------------------|--------------------------------|----------------------|----------------------|-------------------------|------------------------------|------------------------ |
-> | -121.09             | 39.48              | 25.0                         | 1665.0                | Just 374.0                     | 845.0                | 330.0                | 1.5603                  | 78100.0                      | INLAND                  |
-> | -121.21             | 39.49              | 18.0                         | 697.0                 | Just 150.0                     | 356.0                | 114.0                | 2.5568                  | 77100.0                      | INLAND                  |
-> | -121.22             | 39.43              | 17.0                         | 2254.0                | Just 485.0                     | 1007.0               | 433.0                | 1.7                     | 92300.0                      | INLAND                  |
-> | -121.32             | 39.43              | 18.0                         | 1860.0                | Just 409.0                     | 741.0                | 349.0                | 1.8672                  | 84700.0                      | INLAND                  |
-> | -121.24             | 39.37              | 16.0                         | 2785.0                | Just 616.0                     | 1387.0               | 530.0                | 2.3886                  | 89400.0                      | INLAND                  |
-
-
 ### describeColumns
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable (D.describeColumns housing)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | Column Name<br>Text | # Non-null Values<br>Int | # Null Values<br>Int | Type<br>Text |
-> | --------------------|--------------------------|----------------------|------------- |
-> | total_bedrooms      | 20433                    | 207                  | Maybe Double |
-> | ocean_proximity     | 20640                    | 0                    | Text         |
-> | median_house_value  | 20640                    | 0                    | Double       |
-> | median_income       | 20640                    | 0                    | Double       |
-> | households          | 20640                    | 0                    | Double       |
-> | population          | 20640                    | 0                    | Double       |
-> | total_rooms         | 20640                    | 0                    | Double       |
-> | housing_median_age  | 20640                    | 0                    | Double       |
-> | latitude            | 20640                    | 0                    | Double       |
-> | longitude           | 20640                    | 0                    | Double       |
-
-
 `describeColumns` tells you the name, type, number of non-null values, number of nulls, and number of unique values for every column. It is the first thing to run on any new dataset.
 
 ### summarize
 
-
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable (D.summarize housing)
 ```
-
-> <!-- sabela:mime text/plain -->
-> | Statistic<br>Text | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double |
-> | ------------------|---------------------|--------------------|------------------------------|-----------------------|--------------------------|----------------------|----------------------|-------------------------|----------------------------- |
-> | Count             | 20640.0             | 20640.0            | 20640.0                      | 20640.0               | 20433.0                  | 20640.0              | 20640.0              | 20640.0                 | 20640.0                      |
-> | Mean              | -119.57             | 35.63              | 28.64                        | 2635.76               | 537.87                   | 1425.48              | 499.54               | 3.87                    | 206855.82                    |
-> | Minimum           | -124.35             | 32.54              | 1.0                          | 2.0                   | 1.0                      | 3.0                  | 1.0                  | 0.5                     | 14999.0                      |
-> | 25%               | -121.8              | 33.93              | 18.0                         | 1447.75               | 296.0                    | 787.0                | 280.0                | 2.56                    | 119600.0                     |
-> | Median            | -118.49             | 34.26              | 29.0                         | 2127.0                | 435.0                    | 1166.0               | 409.0                | 3.53                    | 179700.0                     |
-> | 75%               | -118.01             | 37.71              | 37.0                         | 3148.0                | 647.0                    | 1725.0               | 605.0                | 4.74                    | 264725.0                     |
-> | Max               | -114.31             | 41.95              | 52.0                         | 39320.0               | 6445.0                   | 35682.0              | 6082.0               | 15.0                    | 500001.0                     |
-> | StdDev            | 2.0                 | 2.14               | 12.59                        | 2181.62               | 421.39                   | 1132.46              | 382.33               | 1.9                     | 115395.62                    |
-> | IQR               | 3.79                | 3.78               | 19.0                         | 1700.25               | 351.0                    | 938.0                | 325.0                | 2.18                    | 145125.0                     |
-> | Skewness          | -0.3                | 0.47               | 6.0e-2                       | 4.15                  | 3.46                     | 4.94                 | 3.41                 | 1.65                    | 0.98                         |
-
 
 `summarize` shows the mean, min, 25th percentile, median, 75th percentile, max, standard deviation, IQR, and skewness for every numeric column in one table.
 
@@ -262,27 +156,19 @@ Haskell's type errors are a conversation with the compiler, not a failure. Here 
 
 Passing a character instead of an integer to `take`:
 
-
 ```haskell
 -- D.take '5' housing
 -- error: Couldn't match expected type 'Int' with actual type 'Char'
 -- Fix: D.take 5 housing
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 Passing a `Double` column expression where an `Int` is expected:
-
 
 ```haskell
 -- D.mean (F.col @Int "longitude") housing
 -- error: Couldn't match type 'Double' with 'Int' for column "longitude"
 -- Fix: D.mean (F.col @Double "longitude") housing
 ```
-
-> <!-- sabela:mime text/plain -->
-
 
 Errors tell you the exact location and what went wrong. Over time you learn to read them as precise hints.
 
@@ -296,7 +182,6 @@ Data from the real world is rarely clean. Haskell's type system makes common cle
 
 Potentially-missing values are represented by `Maybe`. `Just x` means the value is present; `Nothing` means it is absent. This is not a special dataframe convention — it is a core Haskell type.
 
-
 ```haskell
 messy = D.fromNamedColumns
     [ ("id",    D.fromList [Just 1, Just 2, Nothing, Nothing  :: Maybe Int])
@@ -307,43 +192,19 @@ messy = D.fromNamedColumns
 TIO.putStrLn $ D.toMarkdownTable messy
 ```
 
-> <!-- sabela:mime text/plain -->
-> | id<br>Maybe Int | score<br>Maybe Double | rate<br>Maybe Double |
-> | ----------------|-----------------------|--------------------- |
-> | Just 1          | Just 6.5              | Just 3.0             |
-> | Just 2          | Nothing               | Nothing              |
-> | Nothing         | Nothing               | Nothing              |
-> | Nothing         | Just 6.5              | Just 3.0             |
-
-
 #### Filtering by nulls
 
 `filterJust col df` drops all rows where `col` is `Nothing` and unwraps the `Maybe`:
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable (D.filterJust "id" messy)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | id<br>Int | score<br>Maybe Double | rate<br>Maybe Double |
-> | ----------|-----------------------|--------------------- |
-> | 1         | Just 6.5              | Just 3.0             |
-> | 2         | Nothing               | Nothing              |
-
-
 `filterAllJust df` keeps only rows where *every* column is non-null:
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable (D.filterAllJust messy)
 ```
-
-> <!-- sabela:mime text/plain -->
-> | id<br>Int | score<br>Double | rate<br>Double |
-> | ----------|-----------------|--------------- |
-> | 1         | 6.5             | 3.0            |
-
 
 The companions `filterNothing` and `filterAllNothing` do the opposite — they let you inspect the bad rows.
 
@@ -351,61 +212,30 @@ The companions `filterNothing` and `filterAllNothing` do the opposite — they l
 
 `impute expr default df` fills every `Nothing` in a column with a given value:
 
-
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable
     (D.impute (F.col @(Maybe Int) "id") 0 messy)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | id<br>Int | score<br>Maybe Double | rate<br>Maybe Double |
-> | ----------|-----------------------|--------------------- |
-> | 1         | Just 6.5              | Just 3.0             |
-> | 2         | Nothing               | Nothing              |
-> | 0         | Nothing               | Nothing              |
-> | 0         | Just 6.5              | Just 3.0             |
-
-
 Notice the `@(Maybe Int)` type annotation — it tells the imputer what type the column holds. Passing the wrong type throws a clear runtime error:
-
 
 ```haskell
 -- D.impute (F.col @(Maybe Double) "id") 0 messy
 -- Exception: Type Mismatch — expected 'Maybe Double' but column is 'Maybe Integer'
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 #### Imputing with a statistic
 
 `imputeWith` fills nulls with the result of an aggregation, e.g. the column mean:
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable $ D.take 10
     (D.imputeWith F.mean (F.col @(Maybe Double) "total_bedrooms") housing)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double | ocean_proximity<br>Text |
-> | --------------------|--------------------|------------------------------|-----------------------|--------------------------|----------------------|----------------------|-------------------------|------------------------------|------------------------ |
-> | -122.23             | 37.88              | 41.0                         | 880.0                 | 129.0                    | 322.0                | 126.0                | 8.3252                  | 452600.0                     | NEAR BAY                |
-> | -122.22             | 37.86              | 21.0                         | 7099.0                | 1106.0                   | 2401.0               | 1138.0               | 8.3014                  | 358500.0                     | NEAR BAY                |
-> | -122.24             | 37.85              | 52.0                         | 1467.0                | 190.0                    | 496.0                | 177.0                | 7.2574                  | 352100.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 1274.0                | 235.0                    | 558.0                | 219.0                | 5.6431000000000004      | 341300.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 1627.0                | 280.0                    | 565.0                | 259.0                | 3.8462                  | 342200.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 919.0                 | 213.0                    | 413.0                | 193.0                | 4.0368                  | 269700.0                     | NEAR BAY                |
-> | -122.25             | 37.84              | 52.0                         | 2535.0                | 489.0                    | 1094.0               | 514.0                | 3.6591                  | 299200.0                     | NEAR BAY                |
-> | -122.25             | 37.84              | 52.0                         | 3104.0                | 687.0                    | 1157.0               | 647.0                | 3.12                    | 241400.0                     | NEAR BAY                |
-> | -122.26             | 37.84              | 42.0                         | 2555.0                | 665.0                    | 1206.0               | 595.0                | 2.0804                  | 226700.0                     | NEAR BAY                |
-> | -122.25             | 37.84              | 52.0                         | 3549.0                | 707.0                    | 1551.0               | 714.0                | 3.6912000000000003      | 261100.0                     | NEAR BAY                |
-
-
 ### Removing duplicates
 
 `distinct df` keeps one copy of each unique row:
-
 
 ```haskell
 dupData = D.fromNamedColumns
@@ -416,21 +246,9 @@ dupData = D.fromNamedColumns
 TIO.putStrLn $ D.toMarkdownTable (D.distinct dupData)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | k1<br>[Char] | k2<br>Int |
-> | -------------|---------- |
-> | two          | 3         |
-> | one          | 3         |
-> | one          | 1         |
-> | two          | 4         |
-> | two          | 1         |
-> | one          | 2         |
-
-
 ### Opting into stronger type safety
 
 After `$(F.declareColumns df)` any imputation or filter expression is checked at compile time. A typo in a column name becomes a compile error, not a runtime surprise.
-
 
 ```haskell
 $(F.declareColumns housing)
@@ -440,27 +258,11 @@ TIO.putStrLn $ D.toMarkdownTable $ D.take 10
     (D.imputeWith F.mean total_bedrooms housing)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double | ocean_proximity<br>Text |
-> | --------------------|--------------------|------------------------------|-----------------------|--------------------------|----------------------|----------------------|-------------------------|------------------------------|------------------------ |
-> | -122.23             | 37.88              | 41.0                         | 880.0                 | 129.0                    | 322.0                | 126.0                | 8.3252                  | 452600.0                     | NEAR BAY                |
-> | -122.22             | 37.86              | 21.0                         | 7099.0                | 1106.0                   | 2401.0               | 1138.0               | 8.3014                  | 358500.0                     | NEAR BAY                |
-> | -122.24             | 37.85              | 52.0                         | 1467.0                | 190.0                    | 496.0                | 177.0                | 7.2574                  | 352100.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 1274.0                | 235.0                    | 558.0                | 219.0                | 5.6431000000000004      | 341300.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 1627.0                | 280.0                    | 565.0                | 259.0                | 3.8462                  | 342200.0                     | NEAR BAY                |
-> | -122.25             | 37.85              | 52.0                         | 919.0                 | 213.0                    | 413.0                | 193.0                | 4.0368                  | 269700.0                     | NEAR BAY                |
-> | -122.25             | 37.84              | 52.0                         | 2535.0                | 489.0                    | 1094.0               | 514.0                | 3.6591                  | 299200.0                     | NEAR BAY                |
-> | -122.25             | 37.84              | 52.0                         | 3104.0                | 687.0                    | 1157.0               | 647.0                | 3.12                    | 241400.0                     | NEAR BAY                |
-> | -122.26             | 37.84              | 42.0                         | 2555.0                | 665.0                    | 1206.0               | 595.0                | 2.0804                  | 226700.0                     | NEAR BAY                |
-> | -122.25             | 37.84              | 52.0                         | 3549.0                | 707.0                    | 1551.0               | 714.0                | 3.6912000000000003      | 261100.0                     | NEAR BAY                |
-
-
 ---
 
 ## Chapter 5: Data Transformation
 
 Most datasets need some reshaping before analysis. Take this hypothetical meat dataset:
-
 
 ```haskell
 foodOptions  = ["bacon","pulled pork","bacon","pastrami","corned beef","bacon","pastrami","honey ham","nova lox" :: T.Text]
@@ -474,57 +276,25 @@ meat = D.fromNamedColumns
 TIO.putStrLn $ D.toMarkdownTable meat
 ```
 
-> <!-- sabela:mime text/plain -->
-> | food<br>Text | ounces<br>Double |
-> | -------------|----------------- |
-> | bacon        | 4.0              |
-> | pulled pork  | 3.0              |
-> | bacon        | 12.0             |
-> | pastrami     | 6.0              |
-> | corned beef  | 7.5              |
-> | bacon        | 8.0              |
-> | pastrami     | 3.0              |
-> | honey ham    | 5.0              |
-> | nova lox     | 6.0              |
-
-
 ### Adding derived columns
 
 `derive name expr df` adds a new column computed from an expression.
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable
     (D.derive "kilograms" (F.col @Double "ounces" * 0.03) meat)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | food<br>Text | ounces<br>Double | kilograms<br>Double |
-> | -------------|------------------|-------------------- |
-> | bacon        | 4.0              | 0.12                |
-> | pulled pork  | 3.0              | 9.0e-2              |
-> | bacon        | 12.0             | 0.36                |
-> | pastrami     | 6.0              | 0.18                |
-> | corned beef  | 7.5              | 0.22499999999999998 |
-> | bacon        | 8.0              | 0.24                |
-> | pastrami     | 3.0              | 9.0e-2              |
-> | honey ham    | 5.0              | 0.15                |
-> | nova lox     | 6.0              | 0.18                |
-
-
 ### Expressions and F.col
 
 `F.col @Type "name"` creates an *expression* — a typed reference to a column that can be combined with arithmetic operators, boolean operators, or custom functions.
-
 
 ```
 F.col @Double "ounces"   -- :: Expr Double
 F.col @Text   "food"     -- :: Expr Text
 ```
 
-
 You can compose expressions:
-
 
 ```haskell
 roomsPerHousehold = D.derive "rooms_per_household"
@@ -534,20 +304,9 @@ roomsPerHousehold = D.derive "rooms_per_household"
 TIO.putStrLn $ D.toMarkdownTable (D.take 5 roomsPerHousehold)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Maybe Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double | ocean_proximity<br>Text | rooms_per_household<br>Double |
-> | --------------------|--------------------|------------------------------|-----------------------|--------------------------------|----------------------|----------------------|-------------------------|------------------------------|-------------------------|------------------------------ |
-> | -122.23             | 37.88              | 41.0                         | 880.0                 | Just 129.0                     | 322.0                | 126.0                | 8.3252                  | 452600.0                     | NEAR BAY                | 6.984126984126984             |
-> | -122.22             | 37.86              | 21.0                         | 7099.0                | Just 1106.0                    | 2401.0               | 1138.0               | 8.3014                  | 358500.0                     | NEAR BAY                | 6.238137082601054             |
-> | -122.24             | 37.85              | 52.0                         | 1467.0                | Just 190.0                     | 496.0                | 177.0                | 7.2574                  | 352100.0                     | NEAR BAY                | 8.288135593220339             |
-> | -122.25             | 37.85              | 52.0                         | 1274.0                | Just 235.0                     | 558.0                | 219.0                | 5.6431000000000004      | 341300.0                     | NEAR BAY                | 5.8173515981735155            |
-> | -122.25             | 37.85              | 52.0                         | 1627.0                | Just 280.0                     | 565.0                | 259.0                | 3.8462                  | 342200.0                     | NEAR BAY                | 6.281853281853282             |
-
-
 ### Lifting custom functions
 
 When the built-in arithmetic operators are not enough, `F.lift` applies any function to a column expression.
-
 
 ```haskell
 import Data.Text (Text)
@@ -565,24 +324,9 @@ TIO.putStrLn $ D.toMarkdownTable
     (D.derive "animal" (F.lift meatToAnimal (F.col @Text "food")) meat)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | food<br>Text | ounces<br>Double | animal<br>Text |
-> | -------------|------------------|--------------- |
-> | bacon        | 4.0              | pig            |
-> | pulled pork  | 3.0              | pig            |
-> | bacon        | 12.0             | pig            |
-> | pastrami     | 6.0              | cow            |
-> | corned beef  | 7.5              | cow            |
-> | bacon        | 8.0              | pig            |
-> | pastrami     | 3.0              | cow            |
-> | honey ham    | 5.0              | pig            |
-> | nova lox     | 6.0              | salmon         |
-
-
 ### Recoding values
 
 `F.recode mapping expr` is a concise way to map one set of values to another:
-
 
 ```haskell
 animalMapping = [("bacon","pig"),("pulled pork","pig"),("pastrami","cow"),("corned beef","cow"),("honey ham","pig"),("nova lox","salmon")]
@@ -591,24 +335,9 @@ TIO.putStrLn $ D.toMarkdownTable
     (D.derive "animal2" (F.recode animalMapping (F.col @Text "food")) meat)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | food<br>Text | ounces<br>Double | animal2<br>Maybe [Char] |
-> | -------------|------------------|------------------------ |
-> | bacon        | 4.0              | Just "pig"              |
-> | pulled pork  | 3.0              | Just "pig"              |
-> | bacon        | 12.0             | Just "pig"              |
-> | pastrami     | 6.0              | Just "cow"              |
-> | corned beef  | 7.5              | Just "cow"              |
-> | bacon        | 8.0              | Just "pig"              |
-> | pastrami     | 3.0              | Just "cow"              |
-> | honey ham    | 5.0              | Just "pig"              |
-> | nova lox     | 6.0              | Just "salmon"           |
-
-
 ### Opting into stronger type safety
 
 After `$(F.declareColumns meat)`, column references are checked at compile time:
-
 
 ```haskell
 $(F.declareColumns meat)
@@ -618,35 +347,16 @@ TIO.putStrLn $ D.toMarkdownTable
     (D.derive "kilograms" (ounces * 0.03) meat)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | food<br>Text | ounces<br>Double | kilograms<br>Double |
-> | -------------|------------------|-------------------- |
-> | bacon        | 4.0              | 0.12                |
-> | pulled pork  | 3.0              | 9.0e-2              |
-> | bacon        | 12.0             | 0.36                |
-> | pastrami     | 6.0              | 0.18                |
-> | corned beef  | 7.5              | 0.22499999999999998 |
-> | bacon        | 8.0              | 0.24                |
-> | pastrami     | 3.0              | 9.0e-2              |
-> | honey ham    | 5.0              | 0.15                |
-> | nova lox     | 6.0              | 0.18                |
-
-
 Accidentally using a `Text` column in arithmetic would be a compile error:
-
 
 ```haskell
 -- D.derive "wrong" (food * 0.03) meat
 -- error: No instance for Num (Expr Text) — food is Text, not a number
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 ### The FrameM monad — pipelines without plumbing
 
 Every transformation so far has required threading the dataframe through manually: `df` in, `df'` out, `df''` out of that. For multi-step pipelines that grows tedious fast. `DataFrame.Monad` provides `FrameM`, a state-monad wrapper that threads the dataframe implicitly.
-
 
 ```haskell
 import DataFrame.Monad
@@ -665,22 +375,11 @@ pipelined = execFrameM housing $ do
 TIO.putStrLn $ D.toMarkdownTable $ D.take 5 pipelined
 ```
 
-> <!-- sabela:mime text/plain -->
-> | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double | ocean_proximity<br>Text | is_expensive<br>Bool | rooms_per_household<br>Double |
-> | --------------------|--------------------|------------------------------|-----------------------|--------------------------|----------------------|----------------------|-------------------------|------------------------------|-------------------------|----------------------|------------------------------ |
-> | -122.24             | 37.86              | 52.0                         | 1668.0                | 225.0                    | 517.0                | 214.0                | 7.8521                  | 500001.0                     | NEAR BAY                | True                 | 7.794392523364486             |
-> | -122.24             | 37.85              | 52.0                         | 3726.0                | 474.0                    | 1366.0               | 496.0                | 9.3959                  | 500001.0                     | NEAR BAY                | True                 | 7.512096774193548             |
-> | -122.23             | 37.83              | 52.0                         | 2990.0                | 379.0                    | 947.0                | 361.0                | 7.8772                  | 500001.0                     | NEAR BAY                | True                 | 8.282548476454293             |
-> | -122.22             | 37.82              | 39.0                         | 2492.0                | 310.0                    | 808.0                | 315.0                | 11.8603                 | 500001.0                     | NEAR BAY                | True                 | 7.911111111111111             |
-> | -122.22             | 37.82              | 42.0                         | 2991.0                | 335.0                    | 1018.0               | 335.0                | 13.499                  | 500001.0                     | NEAR BAY                | True                 | 8.928358208955224             |
-
-
 `$(F.declareColumnsFromCsvFile path)` generates compile-time column bindings by reading the CSV header at splice time — no live dataframe needs to be in scope, unlike `$(F.declareColumns df)` which requires a bound frame.
 
 Inside the `do`-block, `<-` binds the typed `Expr` returned by each step; those expressions can be reused in later steps (e.g. `isExpensive` in the final `filterWhereM`) without any extra plumbing.
 
 **Extracting results alongside the final frame** — `runFrameM` returns a pair `(a, DataFrame)`:
-
 
 ```haskell
 ((isExp, bedrooms), housingEnriched) = runFrameM housing $ do
@@ -689,9 +388,6 @@ Inside the `do`-block, `<-` binds the typed `Expr` returned by each step; those 
     bedrooms <- imputeM  total_bedrooms meanBeds
     pure (isExp, bedrooms)
 ```
-
-> <!-- sabela:mime text/plain -->
-
 
 The three exit functions:
 
@@ -713,53 +409,35 @@ Real workflows involve reading data from many sources and writing results back t
 
 You have already seen `D.readCsv`. Under the hood it calls `readCsvWithOpts` with sensible defaults.
 
-
 ```haskell
 housingFull <- D.readCsv "../data/housing.csv"
 
 TIO.putStrLn $ D.toMarkdownTable (D.take 3 housingFull)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | longitude<br>Double | latitude<br>Double | housing_median_age<br>Double | total_rooms<br>Double | total_bedrooms<br>Maybe Double | population<br>Double | households<br>Double | median_income<br>Double | median_house_value<br>Double | ocean_proximity<br>Text |
-> | --------------------|--------------------|------------------------------|-----------------------|--------------------------------|----------------------|----------------------|-------------------------|------------------------------|------------------------ |
-> | -122.23             | 37.88              | 41.0                         | 880.0                 | Just 129.0                     | 322.0                | 126.0                | 8.3252                  | 452600.0                     | NEAR BAY                |
-> | -122.22             | 37.86              | 21.0                         | 7099.0                | Just 1106.0                    | 2401.0               | 1138.0               | 8.3014                  | 358500.0                     | NEAR BAY                |
-> | -122.24             | 37.85              | 52.0                         | 1467.0                | Just 190.0                     | 496.0                | 177.0                | 7.2574                  | 352100.0                     | NEAR BAY                |
-
-
 ### TSV files
 
 Tab-separated files work exactly like CSV:
-
 
 ```haskell
 -- housingTsv <- D.readTsv "data/housing.tsv"
 -- TIO.putStrLn $ D.toMarkdownTable (D.take 3 housingTsv)
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 ### Custom separators and options
 
 `ReadOptions` controls the separator character, header handling, date format, and more.
-
 
 ```haskell
 pipeOpts = D.defaultReadOptions { D.columnSeparator = '|' }
 -- pipeDelimited <- D.readCsvWithOpts pipeOpts "data/data.psv"
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 The `HeaderSpec` type determines how the first row is treated:
 
 * `UseFirstRow` (default) — the first row contains column names.
 * `NoHeader` — there is no header; columns get numeric names.
 * `ProvideNames ["a","b","c"]` — supply names explicitly.
-
 
 ```haskell
 noHeaderOpts = D.defaultReadOptions { D.headerSpec = D.NoHeader }
@@ -770,13 +448,9 @@ namedOpts = D.defaultReadOptions
 -- D.readCsvWithOpts namedOpts "data/housing_no_header.csv"
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 ### Writing CSV files
 
 `D.writeCsv path df` writes a dataframe back to disk:
-
 
 ```haskell
 housingSubset = D.select ["longitude","latitude","median_house_value"] housingFull
@@ -784,70 +458,38 @@ housingSubset = D.select ["longitude","latitude","median_house_value"] housingFu
 D.writeCsv "/tmp/housing_subset.csv" housingSubset
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 You can write any character-separated format:
-
 
 ```haskell
 D.writeSeparated '|' "/tmp/housing_pipe.psv" housingSubset
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 ### Parquet files
 
 Parquet is a columnar binary format common in data engineering pipelines:
-
 
 ```haskell
 -- parquetDf <- D.readParquet "data/housing.parquet"
 -- TIO.putStrLn $ D.toMarkdownTable (D.take 5 parquetDf)
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 For a directory of Parquet shards (e.g. from a Spark job):
-
 
 ```haskell
 -- shardDf <- D.readParquetFiles "data/housing_shards/"
 ```
 
-> <!-- sabela:mime text/plain -->
-
-
 ### Inspecting the schema after load
 
 Always run `describeColumns` on freshly loaded data to confirm types and check for unexpected nulls:
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable (D.describeColumns housingFull)
 ```
 
-> <!-- sabela:mime text/plain -->
-> | Column Name<br>Text | # Non-null Values<br>Int | # Null Values<br>Int | Type<br>Text |
-> | --------------------|--------------------------|----------------------|------------- |
-> | total_bedrooms      | 20433                    | 207                  | Maybe Double |
-> | ocean_proximity     | 20640                    | 0                    | Text         |
-> | median_house_value  | 20640                    | 0                    | Double       |
-> | median_income       | 20640                    | 0                    | Double       |
-> | households          | 20640                    | 0                    | Double       |
-> | population          | 20640                    | 0                    | Double       |
-> | total_rooms         | 20640                    | 0                    | Double       |
-> | housing_median_age  | 20640                    | 0                    | Double       |
-> | latitude            | 20640                    | 0                    | Double       |
-> | longitude           | 20640                    | 0                    | Double       |
-
-
 ### Opting into stronger type safety
 
 After loading, use `F.cast` to produce a column expression with the exact type you expect. Any row whose value cannot be converted becomes `Nothing` in the result:
-
 
 ```haskell
 -- Retype a text column to Double, converting unparseable values to Nothing:
@@ -856,13 +498,11 @@ withIncomeCast = D.derive "income_cast" (F.cast @Double "median_income") housing
 TIO.putStrLn $ D.toMarkdownTable (D.take 5 withIncomeCast)
 ```
 
-
 ### Streaming large files with DataFrame.Lazy
 
 All of the above reads the entire file into memory upfront. For datasets larger than available RAM, `DataFrame.Lazy` offers a pull-based streaming executor: operations build a logical plan tree and nothing is read from disk until `runDataFrame` is called. The optimizer pushes `filter` predicates down to the scan, so unneeded rows are discarded before any column is allocated.
 
 The Lazy path requires an explicit schema — there is no inference. Build one with `schemaType @T`:
-
 
 ```haskell
 -- cabal: build-depends: containers
@@ -884,9 +524,7 @@ housingSchema = Schema $ M.fromList
     ]
 ```
 
-
 Build and run a lazy pipeline:
-
 
 ```haskell
 lazyQuery =
@@ -899,7 +537,6 @@ lazyResult <- L.runDataFrame lazyQuery
 
 TIO.putStrLn $ D.toMarkdownTable lazyResult
 ```
-
 
 Key API:
 
@@ -933,7 +570,6 @@ Three functions handle column re-typing with different failure modes:
 
 #### Lenient cast — nullify bad values
 
-
 ```haskell
 messyNums = D.fromNamedColumns
     [ ("raw", D.fromList ["1.5", "2.0", "bad", "3.7", "" :: T.Text]) ]
@@ -943,9 +579,7 @@ withCast = D.derive "as_double" (F.cast @Double "raw") messyNums
 TIO.putStrLn $ D.toMarkdownTable withCast
 ```
 
-
 #### Cast with default — fill bad values
-
 
 ```haskell
 withDefault = D.derive "as_double" (F.castWithDefault 0.0 "raw") messyNums
@@ -953,18 +587,15 @@ withDefault = D.derive "as_double" (F.castWithDefault 0.0 "raw") messyNums
 TIO.putStrLn $ D.toMarkdownTable withDefault
 ```
 
-
 #### castEither — audit bad rows
 
 `castEither` returns `Right` for successes and `Left` for failures, so you can inspect every bad row before deciding what to do:
-
 
 ```haskell
 withAudit = D.derive "audit" (F.castEither @Double "raw") messyNums
 
 TIO.putStrLn $ D.toMarkdownTable withAudit
 ```
-
 
 Haskell forces you to handle the `Left` case before you can use the values downstream — making data quality issues visible at the type level.
 
@@ -976,7 +607,6 @@ Three functions manipulate `Text` columns inside expressions.
 
 `F.splitOn delim expr` splits each string at the delimiter, producing a list:
 
-
 ```haskell
 emails = D.fromNamedColumns
     [ ("email", D.fromList ["alice@example.com", "bob@haskell.org", "cara@data.io" :: T.Text]) ]
@@ -986,11 +616,9 @@ emailParts = D.derive "parts" (F.splitOn "@" (F.col @T.Text "email")) emails
 TIO.putStrLn $ D.toMarkdownTable emailParts
 ```
 
-
 #### match
 
 `F.match pattern expr` returns `Just` the first regex match, or `Nothing` if there is none:
-
 
 ```haskell
 domains = D.derive "domain" (F.match "[a-z]+\\.[a-z]+" (F.col @T.Text "email")) emails
@@ -998,11 +626,9 @@ domains = D.derive "domain" (F.match "[a-z]+\\.[a-z]+" (F.col @T.Text "email")) 
 TIO.putStrLn $ D.toMarkdownTable domains
 ```
 
-
 #### matchAll
 
 `F.matchAll pattern expr` returns a list of *all* matches:
-
 
 ```haskell
 withWords = D.derive "words" (F.matchAll "[a-z]+" (F.col @T.Text "email")) emails
@@ -1010,13 +636,11 @@ withWords = D.derive "words" (F.matchAll "[a-z]+" (F.col @T.Text "email")) email
 TIO.putStrLn $ D.toMarkdownTable withWords
 ```
 
-
 ### Date operations
 
 #### parseDate
 
 `F.parseDate fmt expr` parses a text column into a `Day`, returning `Nothing` for values that do not match the format:
-
 
 ```haskell
 import Data.Time (Day)
@@ -1031,22 +655,18 @@ withDates = D.derive "date" (F.parseDate @Day "%Y-%m-%d" (F.col @T.Text "date_te
 TIO.putStrLn $ D.toMarkdownTable withDates
 ```
 
-
 #### daysBetween
 
 `F.daysBetween expr1 expr2` computes the number of days between two `Day` expressions:
-
 
 ```haskell
 -- This requires two Day columns; here we illustrate the pattern:
 -- D.derive "days_until" (F.daysBetween today_col deadline_col) df
 ```
 
-
 ### Opting into stronger type safety
 
 `F.castEither` returns `Either Text a` — Haskell's type system ensures you address the `Left` (failure) case before proceeding. The alternative coercion functions (`cast`, `castWithDefault`) have types that make the tradeoff explicit in the signature.
-
 
 ```haskell
 $(F.declareColumns withAudit)
@@ -1054,7 +674,6 @@ $(F.declareColumns withAudit)
 -- 'audit' is Expr (Either Text Double) — you must handle Left before using it as a number
 TIO.putStrLn $ D.toMarkdownTable (D.take 5 withAudit)
 ```
-
 
 ---
 
@@ -1066,7 +685,6 @@ Real analyses often involve multiple tables. This chapter shows how to combine t
 
 `(<>)` stacks two dataframes with compatible schemas. Columns missing from one side are padded with `Nothing`. The `import DataFrame.Operations.Merge ()` at the top of this file brings the `Semigroup` instance into scope.
 
-
 ```haskell
 firstHalf  = D.take 5 housing
 secondHalf = D.range (5, 10) housing
@@ -1076,9 +694,7 @@ combined = firstHalf <> secondHalf
 TIO.putStrLn $ D.toMarkdownTable combined
 ```
 
-
 To stack a list of frames:
-
 
 ```haskell
 chunks = map (\i -> D.range (i, i+3) housing) [0, 4, 8]
@@ -1088,11 +704,9 @@ stacked = mconcat chunks
 TIO.putStrLn $ D.toMarkdownTable stacked
 ```
 
-
 ### Horizontal concatenation with |||
 
 `(|||)` joins two frames side by side (column-wise). Both must have the same number of rows.
-
 
 ```haskell
 leftCols  = D.select ["longitude","latitude"] housing
@@ -1103,11 +717,9 @@ sideBy = leftCols ||| rightCols
 TIO.putStrLn $ D.toMarkdownTable (D.take 5 sideBy)
 ```
 
-
 ### SQL-style joins
 
 Joins combine rows from two tables based on a shared key.
-
 
 ```haskell
 customers = D.fromNamedColumns
@@ -1123,9 +735,7 @@ orders = D.fromNamedColumns
     ]
 ```
 
-
 #### Inner join — only matching rows
-
 
 ```haskell
 innerResult = D.innerJoin ["customer_id"] customers orders
@@ -1133,11 +743,9 @@ innerResult = D.innerJoin ["customer_id"] customers orders
 TIO.putStrLn $ D.toMarkdownTable innerResult
 ```
 
-
 Dave (id=4) has no orders; customer 5 has no customer record. Neither appears in an inner join.
 
 #### Left join — keep all left rows
-
 
 ```haskell
 leftResult = D.leftJoin ["customer_id"] customers orders
@@ -1145,11 +753,9 @@ leftResult = D.leftJoin ["customer_id"] customers orders
 TIO.putStrLn $ D.toMarkdownTable leftResult
 ```
 
-
 Dave appears with `Nothing` for order columns.
 
 #### Right join — keep all right rows
-
 
 ```haskell
 rightResult = D.rightJoin ["customer_id"] customers orders
@@ -1157,11 +763,9 @@ rightResult = D.rightJoin ["customer_id"] customers orders
 TIO.putStrLn $ D.toMarkdownTable rightResult
 ```
 
-
 The orphan order (customer_id=5) appears with `Nothing` for customer columns.
 
 #### Full outer join — keep everything
-
 
 ```haskell
 outerResult = D.fullOuterJoin ["customer_id"] customers orders
@@ -1169,31 +773,25 @@ outerResult = D.fullOuterJoin ["customer_id"] customers orders
 TIO.putStrLn $ D.toMarkdownTable outerResult
 ```
 
-
 All rows from both sides appear; unmatched rows get `Nothing` in the other side's columns.
 
 ### Reshaping
 
 #### select and exclude
 
-
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable
     (D.select ["longitude","latitude","median_house_value"] (D.take 5 housing))
 ```
-
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable
     (D.exclude ["longitude","latitude"] (D.take 5 housing))
 ```
 
-
 #### rename
 
 `D.rename old new df` renames a single column; `D.renameMany pairs df` renames several at once:
-
 
 ```haskell
 renamedHousing = D.renameMany
@@ -1204,30 +802,24 @@ renamedHousing = D.renameMany
 TIO.putStrLn $ D.toMarkdownTable (D.take 3 renamedHousing)
 ```
 
-
 #### sortBy
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable
     (D.take 5 (D.sortBy D.Descending ["median_house_value"] housing))
 ```
 
-
 #### range
 
 `D.range (start, end) df` slices rows from index `start` (inclusive) to `end` (exclusive):
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable (D.range (10, 15) housing)
 ```
 
-
 ### Opting into stronger type safety
 
 After a join the combined schema is known. Use `$(F.declareColumns …)` to get compile-time bindings for all columns of the joined result:
-
 
 ```haskell
 $(F.declareColumns innerResult)
@@ -1238,7 +830,6 @@ enriched = D.derive "total_with_tax" (amount * 1.1) innerResult
 
 TIO.putStrLn $ D.toMarkdownTable enriched
 ```
-
 
 ---
 
@@ -1254,7 +845,6 @@ The `import Granite.Svg` at the top of this file brings the low-level functions 
 ### Histograms
 
 Histograms show the distribution of a single numeric variable.
-
 
 ```haskell
 import qualified DataFrame.Display.Terminal.Plot as P
@@ -1274,19 +864,15 @@ TIO.putStrLn $
             }
 ```
 
-
 The high-level wrapper is even shorter — it uses a default bin count of 30:
-
 
 ```haskell
 P.plotHistogram "median_house_value" housing
 ```
 
-
 ### Scatter plots
 
 Scatter plots reveal relationships between two numeric variables.
-
 
 ```haskell
 incomes = D.columnAsList (F.col @Double "median_income") housing
@@ -1298,45 +884,35 @@ TIO.putStrLn $
         defPlot { plotTitle = "Income vs House Value" }
 ```
 
-
-
 ```haskell
 P.plotScatter "median_income" "median_house_value" housing
 ```
-
 
 ### Bar charts
 
 Bar charts are good for categorical counts.
 
-
 ```haskell
 P.plotBars "ocean_proximity" housing
 ```
 
-
 ### Pie charts
-
 
 ```haskell
 P.plotPie "ocean_proximity" Nothing housing
 ```
 
-
 ### Box plots
 
 Box plots summarise the five-number summary (min, Q1, median, Q3, max) for one or more numeric columns.
-
 
 ```haskell
 P.plotBoxPlots ["median_house_value", "median_income"] housing
 ```
 
-
 ### Line graphs
 
 Line graphs show trends along a continuous x-axis. The second argument is a list of y-axis column names.
-
 
 ```haskell
 ages = D.columnAsList (F.col @Double "housing_median_age") housing
@@ -1347,33 +923,26 @@ TIO.putStrLn $
         defPlot { plotTitle = "Housing Age vs Value" }
 ```
 
-
-
 ```haskell
 P.plotLines "housing_median_age" ["median_house_value"] housing
 ```
-
 
 ### Correlation matrix (heatmap)
 
 A correlation matrix shows pairwise Pearson correlations across all numeric columns.
 
-
 ```haskell
 P.plotCorrelationMatrix housing
 ```
-
 
 ### Opting into stronger type safety
 
 Using `F.col @Double` in `D.columnAsList` ensures only numeric columns reach the plotting functions. Passing a `Text` column to a histogram is a compile error:
 
-
 ```haskell
 -- D.columnAsList (F.col @Double "ocean_proximity") housing
 -- error: column "ocean_proximity" has type Text, not Double
 ```
-
 
 ---
 
@@ -1384,7 +953,6 @@ Grouping is the backbone of most summary analyses. This chapter covers `groupBy`
 ### groupBy and aggregate
 
 `D.groupBy keys df` returns a `GroupedDataFrame`. Calling `D.aggregate exprs grouped` reduces each group to a single row.
-
 
 ```haskell
 import DataFrame.Operators (as)
@@ -1401,7 +969,6 @@ summary = D.aggregate
 
 TIO.putStrLn $ D.toMarkdownTable summary
 ```
-
 
 ### Full aggregation function menu
 
@@ -1426,7 +993,6 @@ TIO.putStrLn $ D.toMarkdownTable summary
 
 Group by multiple columns by passing a longer key list:
 
-
 ```haskell
 $(F.declareColumns meat)
 
@@ -1441,31 +1007,25 @@ meatSummary = D.aggregate
 TIO.putStrLn $ D.toMarkdownTable meatSummary
 ```
 
-
 ### Value counts with frequencies
 
 `D.frequencies expr df` returns a frequency table — row counts and percentages for each unique value:
-
 
 ```haskell
 TIO.putStrLn $ D.toMarkdownTable (D.frequencies (F.col @T.Text "ocean_proximity") housing)
 ```
 
-
 ### Pearson correlation
 
 `D.correlation col1 col2 df` computes the Pearson correlation coefficient between two columns. It returns `Maybe Double` because the result is undefined for constant columns:
-
 
 ```haskell
 D.correlation "median_income" "median_house_value" housing
 ```
 
-
 ### Derived columns on aggregated results
 
 Aggregate first, then derive new columns from the summary:
-
 
 ```haskell
 totalRows = fromIntegral (D.nRows housing) :: Double
@@ -1477,11 +1037,9 @@ withShare = D.derive "pct_of_total"
 TIO.putStrLn $ D.toMarkdownTable withShare
 ```
 
-
 ### Z-score normalisation pipeline
 
 A full group-normalise pipeline: group → compute mean and stddev → derive z-scores.
-
 
 ```haskell
 incomeByProx = D.aggregate
@@ -1492,11 +1050,9 @@ incomeByProx = D.aggregate
 TIO.putStrLn $ D.toMarkdownTable incomeByProx
 ```
 
-
 ### Opting into stronger type safety
 
 After aggregation the result has a new schema. A new `$(F.declareColumns …)` gives you compile-time bindings for that schema:
-
 
 ```haskell
 $(F.declareColumns summary)
@@ -1506,7 +1062,6 @@ ranked = D.sortBy D.Descending [F.name mean_value] summary
 
 TIO.putStrLn $ D.toMarkdownTable ranked
 ```
-
 
 A type-level mistake on an aggregated column — say, treating `count` (an `Int`) as a `Double` — is caught immediately by the compiler rather than silently producing wrong numbers at runtime.
 
@@ -1526,16 +1081,13 @@ The trade-off is more explicit upfront ceremony (a TH splice, a freeze call, and
 
 **At compile time from a CSV file** — `$(DT.deriveSchemaFromCsvFile "Housing" path)` reads the header and generates a type alias called `Housing`:
 
-
 ```haskell
 import qualified DataFrame.Typed as DT
 
 $(DT.deriveSchemaFromCsvFile "Housing" "../data/housing.csv")
 ```
 
-
 **By hand** — equivalent to what the TH splice generates:
-
 
 ```haskell
 type Housing = [ DT.Column "longitude"          Double
@@ -1551,23 +1103,19 @@ type Housing = [ DT.Column "longitude"          Double
                ]
 ```
 
-
 ### Freezing a runtime dataframe
 
 `D.readCsv` returns a plain `DataFrame`. `DT.freezeWithError @Housing` checks that it conforms to the `Housing` schema and produces a `TypedDataFrame Housing`. Any mismatch — wrong column type, missing column — is caught here, near the top of the pipeline, rather than several steps in:
 
-
 ```haskell
 thousing <- either (error . show) id . DT.freezeWithError @Housing <$> D.readCsv "../data/housing.csv"
 ```
-
 
 `DT.thaw` converts back to a plain `DataFrame` when you need to pass the result to a function that does not know about typed frames.
 
 ### Typed transforms
 
 `DT.col @"colName"` looks up the column in the schema at compile time. The type of the expression is inferred automatically — no `@Type` annotation needed. `DT.derive @"newCol"` adds the column to the schema type so subsequent steps can reference it:
-
 
 ```haskell
 typedResult = thousing
@@ -1577,11 +1125,9 @@ typedResult = thousing
 TIO.putStrLn $ D.toMarkdownTable (DT.thaw typedResult)
 ```
 
-
 `DT.impute @"colName" defaultValue` fills `Nothing` values in a nullable column; like `derive`, it updates the schema type (the column becomes non-optional after imputation).
 
 ### Typed group and aggregate
-
 
 ```haskell
 typedGrouped = thousing
@@ -1590,7 +1136,6 @@ typedGrouped = thousing
 
 TIO.putStrLn $ D.toMarkdownTable (DT.thaw typedGrouped)
 ```
-
 
 `DT.groupBy @'["col1","col2"]` takes a type-level list of column names (note the leading `'` for a promoted list). The aggregation spec is built with `DT.agg @"resultCol" aggregationExpr rest` and terminated with `DT.aggNil`.
 
