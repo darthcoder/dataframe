@@ -2,6 +2,7 @@
 Example: Polars -> Haskell -> Polars round-trip via Arrow C Data Interface.
 Run from repo root:
     python3 -m venv
+    source ./venv/bin/activate
     pip install polars
     cabal build dataframe-arrow
     python3 python/example.py
