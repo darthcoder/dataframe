@@ -92,6 +92,12 @@ module DataFrame.Typed.Expr (
     maximum,
     collect,
 
+    -- * Cast / coercion expressions
+    castExpr,
+    castExprWithDefault,
+    castExprEither,
+    unsafeCastExpr,
+
     -- * Named expression helper
     as,
 
@@ -100,6 +106,7 @@ module DataFrame.Typed.Expr (
     desc,
 ) where
 
+import Data.Either (fromRight)
 import Data.Proxy (Proxy (..))
 import Data.String (IsString (..))
 import qualified Data.Text as T
@@ -412,6 +419,50 @@ maximum (TExpr e) = TExpr (Agg (FoldAgg "maximum" Nothing max) e)
 
 collect :: (Columnable a) => TExpr cols a -> TExpr cols [a]
 collect (TExpr e) = TExpr (Agg (FoldAgg "collect" (Just []) (flip (:))) e)
+
+-------------------------------------------------------------------------------
+-- Cast / coercion expressions
+-------------------------------------------------------------------------------
+
+castExpr ::
+    forall b cols src.
+    (Columnable b, Columnable src) => TExpr cols src -> TExpr cols (Maybe b)
+castExpr (TExpr e) =
+    TExpr
+        (CastExprWith @b @(Maybe b) @src "castExpr" (either (const Nothing) Just) e)
+
+castExprWithDefault ::
+    forall b cols src.
+    (Columnable b, Columnable src) => b -> TExpr cols src -> TExpr cols b
+castExprWithDefault def (TExpr e) =
+    TExpr
+        ( CastExprWith @b @b @src
+            ("castExprWithDefault:" <> T.pack (show def))
+            (fromRight def)
+            e
+        )
+
+castExprEither ::
+    forall b cols src.
+    (Columnable b, Columnable src) => TExpr cols src -> TExpr cols (Either T.Text b)
+castExprEither (TExpr e) =
+    TExpr
+        ( CastExprWith @b @(Either T.Text b) @src
+            "castExprEither"
+            (either (Left . T.pack) Right)
+            e
+        )
+
+unsafeCastExpr ::
+    forall b cols src.
+    (Columnable b, Columnable src) => TExpr cols src -> TExpr cols b
+unsafeCastExpr (TExpr e) =
+    TExpr
+        ( CastExprWith @b @b @src
+            "unsafeCastExpr"
+            (fromRight (error "unsafeCastExpr: unexpected Nothing in column"))
+            e
+        )
 
 -------------------------------------------------------------------------------
 -- Named expression helper

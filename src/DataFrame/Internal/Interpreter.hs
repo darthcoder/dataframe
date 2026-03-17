@@ -255,6 +255,7 @@ promoteColumnWith ::
 promoteColumnWith onResult col
     | hasElemType @b col = Right col
     | hasElemType @a col = mapColumn @a (onResult . Right) col
+    | Just result <- tryMaybeWrap @a @b onResult col = result
     | otherwise =
         case testEquality (typeRep @a) (typeRep @Double) of
             Just Refl -> promoteToDoubleWith onResult col
@@ -416,6 +417,39 @@ tryParseWith onResult col = case col of
                     Nothing -> castMismatch @c @b
     UnboxedColumn (_ :: VU.Vector c) -> castMismatch @c @b
 
+{- | When the output type @b@ is @Maybe c@ (or @Maybe (Maybe c)@) and the
+column stores plain @c@ values, wrap each element in 'Just'.
+The @Maybe (Maybe c)@ case applies join semantics: instead of producing
+a double-wrapped column, a @Maybe c@ column is returned, so
+@castExpr \@(Maybe Double)@ on a @Double@ column yields @Maybe Double@
+rather than @Maybe (Maybe Double)@.
+Returns 'Nothing' when neither condition holds.
+-}
+tryMaybeWrap ::
+    forall a b.
+    (Columnable a, Columnable b) =>
+    (Either String a -> b) -> Column -> Maybe (Either DataFrameException Column)
+tryMaybeWrap _onResult col = case col of
+    UnboxedColumn (v :: VU.Vector c) ->
+        let wrapped = V.map Just (VG.convert v) :: V.Vector (Maybe c)
+         in case testEquality (typeRep @b) (typeRep @(Maybe c)) of
+                Just Refl -> Just $ Right $ fromVector @b wrapped
+                Nothing ->
+                    -- join: b = Maybe (Maybe c) → produce Maybe c column
+                    case testEquality (typeRep @b) (typeRep @(Maybe (Maybe c))) of
+                        Just _ -> Just $ Right $ fromVector @(Maybe c) wrapped
+                        Nothing -> Nothing
+    BoxedColumn (v :: V.Vector c) ->
+        let wrapped = V.map Just v :: V.Vector (Maybe c)
+         in case testEquality (typeRep @b) (typeRep @(Maybe c)) of
+                Just Refl -> Just $ Right $ fromVector @b wrapped
+                Nothing ->
+                    case testEquality (typeRep @b) (typeRep @(Maybe (Maybe c))) of
+                        Just _ -> Just $ Right $ fromVector @(Maybe c) wrapped
+                        Nothing -> Nothing
+    -- OptionalColumn and NullableColumn are already handled by the hasElemType guards above.
+    _ -> Nothing
+
 castMismatch ::
     forall src tgt.
     (Typeable src, Typeable tgt) =>
@@ -483,6 +517,17 @@ eval (GroupCtx gdf) (CastWith name _tag onResult) =
         Just c -> do
             promoted <- promoteColumnWith onResult c
             Right $ Group (sliceGroups promoted (offsets gdf) (valueIndices gdf))
+-- CastExprWith -----------------------------------------------------------
+
+eval ctx (CastExprWith _tag onResult (inner :: Expr src)) = do
+    v <- eval @src ctx inner
+    case v of
+        Scalar s ->
+            Flat <$> promoteColumnWith onResult (fromList @src [s])
+        Flat col ->
+            Flat <$> promoteColumnWith onResult col
+        Group gs ->
+            Group <$> V.mapM (promoteColumnWith onResult) gs
 -- Unary ------------------------------------------------------------------
 
 eval ctx expr@(Unary (op :: UnaryOp b a) inner) = addContext expr $ do

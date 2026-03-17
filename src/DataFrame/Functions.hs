@@ -36,12 +36,12 @@ import Data.Int
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Maybe as Maybe
+import qualified Data.Set as S
 import qualified Data.Text as T
 import Data.Time
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import Data.Word
-import qualified Data.Set as S
 import qualified DataFrame.IO.CSV as CSV
 import qualified DataFrame.IO.Parquet as Parquet
 import DataFrame.IO.Parquet.Thrift
@@ -156,6 +156,32 @@ unsafeCast name =
         name
         "unsafeCast"
         (fromRight (error "unsafeCast: unexpected Nothing in column"))
+
+castExpr ::
+    forall b src. (Columnable b, Columnable src) => Expr src -> Expr (Maybe b)
+castExpr = CastExprWith @b @(Maybe b) @src "castExpr" (either (const Nothing) Just)
+
+castExprWithDefault ::
+    forall b src. (Columnable b, Columnable src) => b -> Expr src -> Expr b
+castExprWithDefault def =
+    CastExprWith @b @b @src
+        ("castExprWithDefault:" <> T.pack (show def))
+        (fromRight def)
+
+castExprEither ::
+    forall b src.
+    (Columnable b, Columnable src) => Expr src -> Expr (Either T.Text b)
+castExprEither =
+    CastExprWith @b @(Either T.Text b) @src
+        "castExprEither"
+        (either (Left . T.pack) Right)
+
+unsafeCastExpr ::
+    forall b src. (Columnable b, Columnable src) => Expr src -> Expr b
+unsafeCastExpr =
+    CastExprWith @b @b @src
+        "unsafeCastExpr"
+        (fromRight (error "unsafeCastExpr: unexpected Nothing in column"))
 
 liftDecorated ::
     (Columnable a, Columnable b) =>
@@ -544,19 +570,22 @@ declareColumnsFromParquetFile path = do
     files <- liftIO $ filterM (fmap Prelude.not . doesDirectoryExist) matches
     metas <- liftIO $ mapM (fmap fst . Parquet.readMetadataFromPath) files
     let nullableCols :: S.Set T.Text
-        nullableCols = S.fromList
-            [ T.pack (last colPath)
-            | meta  <- metas
-            , rg    <- rowGroups meta
-            , cc    <- rowGroupColumns rg
-            , let cm      = columnMetaData cc
-                  colPath = columnPathInSchema cm
-            , Prelude.not (null colPath)
-            , columnNullCount (columnStatistics cm) > 0
-            ]
-    let df = foldl (\acc meta -> acc <> schemaToEmptyDataFrame nullableCols (schema meta))
-                   DataFrame.Internal.DataFrame.empty
-                   metas
+        nullableCols =
+            S.fromList
+                [ T.pack (last colPath)
+                | meta <- metas
+                , rg <- rowGroups meta
+                , cc <- rowGroupColumns rg
+                , let cm = columnMetaData cc
+                      colPath = columnPathInSchema cm
+                , Prelude.not (null colPath)
+                , columnNullCount (columnStatistics cm) > 0
+                ]
+    let df =
+            foldl
+                (\acc meta -> acc <> schemaToEmptyDataFrame nullableCols (schema meta))
+                DataFrame.Internal.DataFrame.empty
+                metas
     declareColumns df
 
 schemaToEmptyDataFrame :: S.Set T.Text -> [SchemaElement] -> DataFrame
@@ -566,11 +595,12 @@ schemaToEmptyDataFrame nullableCols elems =
 
 schemaElemToColumn :: S.Set T.Text -> SchemaElement -> (T.Text, Column)
 schemaElemToColumn nullableCols elem =
-    let name   = elementName elem
+    let name = elementName elem
         isNull = name `S.member` nullableCols
-        col    = if isNull
-                     then emptyNullableColumnForType (elementType elem)
-                     else emptyColumnForType         (elementType elem)
+        col =
+            if isNull
+                then emptyNullableColumnForType (elementType elem)
+                else emptyColumnForType (elementType elem)
      in (name, col)
 
 emptyColumnForType :: TType -> Column
@@ -588,16 +618,16 @@ emptyColumnForType = \case
 
 emptyNullableColumnForType :: TType -> Column
 emptyNullableColumnForType = \case
-    BOOL   -> fromList @(Maybe Bool)   []
-    BYTE   -> fromList @(Maybe Word8)  []
-    I16    -> fromList @(Maybe Int16)  []
-    I32    -> fromList @(Maybe Int32)  []
-    I64    -> fromList @(Maybe Int64)  []
-    I96    -> fromList @(Maybe Int64)  []
-    FLOAT  -> fromList @(Maybe Float)  []
+    BOOL -> fromList @(Maybe Bool) []
+    BYTE -> fromList @(Maybe Word8) []
+    I16 -> fromList @(Maybe Int16) []
+    I32 -> fromList @(Maybe Int32) []
+    I64 -> fromList @(Maybe Int64) []
+    I96 -> fromList @(Maybe Int64) []
+    FLOAT -> fromList @(Maybe Float) []
     DOUBLE -> fromList @(Maybe Double) []
     STRING -> fromList @(Maybe T.Text) []
-    other  -> error $ "Unsupported parquet type for column: " <> show other
+    other -> error $ "Unsupported parquet type for column: " <> show other
 
 declareColumnsFromCsvWithOpts :: CSV.ReadOptions -> String -> DecsQ
 declareColumnsFromCsvWithOpts opts path = do
