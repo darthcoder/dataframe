@@ -482,9 +482,20 @@ eval _ (Lit v) = Right (Scalar v)
 eval (FlatCtx df) (Col name) =
     case getColumn name df of
         Nothing ->
-            Left $
-                ColumnNotFoundException name "" (M.keys $ columnIndices df)
-        Just c -> Right (Flat c)
+            Left $ ColumnNotFoundException name "" (M.keys $ columnIndices df)
+        Just c
+            | hasElemType @a c -> Right (Flat c)
+            | otherwise ->
+                Left $
+                    TypeMismatchException
+                        ( MkTypeErrorContext
+                            { userType = Right (typeRep @a)
+                            , expectedType = Left (columnTypeString c)
+                            , errorColumnName = Just (T.unpack name)
+                            , callingFunctionName = Just "col"
+                            } ::
+                            TypeErrorContext a ()
+                        )
 eval (GroupCtx gdf) (Col name) =
     case getColumn name (fullDataframe gdf) of
         Nothing ->
@@ -493,11 +504,20 @@ eval (GroupCtx gdf) (Col name) =
                     name
                     ""
                     (M.keys $ columnIndices $ fullDataframe gdf)
-        Just c ->
-            Right
-                ( Group
-                    (sliceGroups c (offsets gdf) (valueIndices gdf))
-                )
+        Just c
+            | hasElemType @a c ->
+                Right (Group (sliceGroups c (offsets gdf) (valueIndices gdf)))
+            | otherwise ->
+                Left $
+                    TypeMismatchException
+                        ( MkTypeErrorContext
+                            { userType = Right (typeRep @a)
+                            , expectedType = Left (columnTypeString c)
+                            , errorColumnName = Just (T.unpack name)
+                            , callingFunctionName = Just "col"
+                            } ::
+                            TypeErrorContext a ()
+                        )
 -- CastWith ---------------------------------------------------------------
 
 eval (FlatCtx df) (CastWith name _tag onResult) =
