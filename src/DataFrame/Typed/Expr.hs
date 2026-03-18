@@ -124,6 +124,7 @@ import DataFrame.Internal.Expression (
  )
 import DataFrame.Internal.Nullable (
     BaseType,
+    DivWidenOp,
     NullCmpResult,
     NullLift1Op (applyNull1),
     NullLift1Result,
@@ -132,9 +133,11 @@ import DataFrame.Internal.Nullable (
     NullableCmpOp (nullCmpOp),
     NumericWidenOp,
     WidenResult,
+    WidenResultDiv,
+    divArithOp,
     widenArithOp,
  )
-import DataFrame.Internal.Types (Promote)
+import DataFrame.Internal.Types (Promote, PromoteDiv)
 
 import DataFrame.Typed.Schema (AssertPresent, Lookup)
 import DataFrame.Typed.Types (TExpr (..), TSortOrder (..))
@@ -344,19 +347,19 @@ infix 4 .==, ./=, .<, .<=, .>=, .>
             b
         )
 
--- | Nullable-aware division.
+-- | Nullable-aware division. Integral operands are promoted to Double.
 (./) ::
-    ( NumericWidenOp (BaseType a) (BaseType b)
-    , NullLift2Op a b (Promote (BaseType a) (BaseType b)) (WidenResult a b)
-    , Fractional (Promote (BaseType a) (BaseType b))
+    ( DivWidenOp (BaseType a) (BaseType b)
+    , NullLift2Op a b (PromoteDiv (BaseType a) (BaseType b)) (WidenResultDiv a b)
+    , Fractional (PromoteDiv (BaseType a) (BaseType b))
     ) =>
     TExpr cols a ->
     TExpr cols b ->
-    TExpr cols (WidenResult a b)
+    TExpr cols (WidenResultDiv a b)
 (./) (TExpr a) (TExpr b) =
     TExpr
         ( Binary
-            (MkBinaryOp (applyNull2 (widenArithOp (/))) "nulldiv" (Just "/") False 7)
+            (MkBinaryOp (applyNull2 (divArithOp (/))) "nulldiv" (Just "/") False 7)
             a
             b
         )

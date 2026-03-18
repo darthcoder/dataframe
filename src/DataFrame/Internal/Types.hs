@@ -142,3 +142,13 @@ type family Promote (a :: Type) (b :: Type) :: Type where
     Promote Int32 _ = Int32
     Promote _ Int32 = Int32
     Promote a _ = a
+
+{- | Like 'Promote', but integral × integral → Double for use with './' .
+Double\/Float still dominate; any two integral types (same or mixed) become Double.
+-}
+type family PromoteDiv (a :: Type) (b :: Type) :: Type where
+    PromoteDiv Double _ = Double
+    PromoteDiv _ Double = Double
+    PromoteDiv Float _ = Float
+    PromoteDiv _ Float = Float
+    PromoteDiv _ _ = Double -- Int/Int32/Int64 in any combination

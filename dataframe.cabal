@@ -21,10 +21,10 @@ extra-source-files: cbits/process_csv.h
                     cbits/dataframe_arrow.h
                     cbits/rts_init.c
                     data/titanic/*.csv
+                    data/sharded/*.parquet
                     tests/data/*.csv
                     tests/data/*.tsv
                     tests/data/*.parquet
-                    tests/data/sharded/*.parquet
                     tests/data/unstable_csv/*.csv
                     tests/data/unstable_csv/*.tsv
                     -- tests/data/*.md

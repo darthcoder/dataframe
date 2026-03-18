@@ -21,14 +21,17 @@ import DataFrame.Internal.Expression (
  )
 import DataFrame.Internal.Nullable (
     BaseType,
+    DivWidenOp,
     NullCmpResult,
     NullLift2Op (applyNull2),
     NullableCmpOp (nullCmpOp),
     NumericWidenOp,
     WidenResult,
+    WidenResultDiv,
+    divArithOp,
     widenArithOp,
  )
-import DataFrame.Internal.Types (Promote)
+import DataFrame.Internal.Types (Promote, PromoteDiv)
 
 infix 8 .^^
 infix 6 .+, .-
@@ -126,19 +129,19 @@ lit = Lit
             }
         )
 
--- | Nullable-aware division.
+-- | Nullable-aware division. Integral operands are promoted to Double.
 (./) ::
-    ( NumericWidenOp (BaseType a) (BaseType b)
-    , NullLift2Op a b (Promote (BaseType a) (BaseType b)) (WidenResult a b)
-    , Fractional (Promote (BaseType a) (BaseType b))
+    ( DivWidenOp (BaseType a) (BaseType b)
+    , NullLift2Op a b (PromoteDiv (BaseType a) (BaseType b)) (WidenResultDiv a b)
+    , Fractional (PromoteDiv (BaseType a) (BaseType b))
     ) =>
     Expr a ->
     Expr b ->
-    Expr (WidenResult a b)
+    Expr (WidenResultDiv a b)
 (./) =
     Binary
         ( MkBinaryOp
-            { binaryFn = applyNull2 (widenArithOp (/))
+            { binaryFn = applyNull2 (divArithOp (/))
             , binaryName = "nulldiv"
             , binarySymbol = Just "/"
             , binaryCommutative = False

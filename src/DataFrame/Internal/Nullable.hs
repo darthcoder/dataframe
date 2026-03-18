@@ -64,10 +64,16 @@ module DataFrame.Internal.Nullable (
     NumericWidenOp (..),
     widenArithOp,
     WidenResult,
+
+    -- * Division widening (integral × integral → Double)
+    DivWidenOp (..),
+    divArithOp,
+    WidenResultDiv,
 ) where
 
+import Data.Int (Int32, Int64)
 import DataFrame.Internal.Column (Columnable)
-import DataFrame.Internal.Types (Promote)
+import DataFrame.Internal.Types (Promote, PromoteDiv)
 
 {- | Strip one layer of 'Maybe'.
 
@@ -390,3 +396,82 @@ widenArithOp f x y = f (widen1 @a @b x) (widen2 @a @b y)
 
 -- | Result type of a widening binary operator, accounting for nullable wrappers.
 type WidenResult a b = NullLift2Result a b (Promote (BaseType a) (BaseType b))
+
+-- ---------------------------------------------------------------------------
+-- Division widening (integral × integral → Double)
+-- ---------------------------------------------------------------------------
+
+{- | Like 'NumericWidenOp' but uses 'PromoteDiv': integral×integral → Double.
+Floating types still dominate (Double > Float), and any two integral types
+(same or mixed) are both widened to Double.
+-}
+class (Columnable (PromoteDiv a b)) => DivWidenOp a b where
+    divWiden1 :: a -> PromoteDiv a b
+    divWiden2 :: b -> PromoteDiv a b
+
+-- Floating same-type (identity)
+instance DivWidenOp Double Double where divWiden1 = id; divWiden2 = id
+instance DivWidenOp Float Float where divWiden1 = id; divWiden2 = id
+
+-- Mixed Double/Float
+instance DivWidenOp Double Float where divWiden1 = id; divWiden2 = realToFrac
+instance DivWidenOp Float Double where divWiden1 = realToFrac; divWiden2 = id
+
+-- Double beats integral
+instance DivWidenOp Double Int where divWiden1 = id; divWiden2 = fromIntegral
+instance DivWidenOp Int Double where divWiden1 = fromIntegral; divWiden2 = id
+instance DivWidenOp Double Int32 where divWiden1 = id; divWiden2 = fromIntegral
+instance DivWidenOp Int32 Double where divWiden1 = fromIntegral; divWiden2 = id
+instance DivWidenOp Double Int64 where divWiden1 = id; divWiden2 = fromIntegral
+instance DivWidenOp Int64 Double where divWiden1 = fromIntegral; divWiden2 = id
+
+-- Float beats integral
+instance DivWidenOp Float Int where divWiden1 = id; divWiden2 = fromIntegral
+instance DivWidenOp Int Float where divWiden1 = fromIntegral; divWiden2 = id
+instance DivWidenOp Float Int32 where divWiden1 = id; divWiden2 = fromIntegral
+instance DivWidenOp Int32 Float where divWiden1 = fromIntegral; divWiden2 = id
+instance DivWidenOp Float Int64 where divWiden1 = id; divWiden2 = fromIntegral
+instance DivWidenOp Int64 Float where divWiden1 = fromIntegral; divWiden2 = id
+
+-- Integral × integral → Double
+instance DivWidenOp Int Int where
+    divWiden1 = fromIntegral
+    divWiden2 = fromIntegral
+instance DivWidenOp Int32 Int32 where
+    divWiden1 = fromIntegral
+    divWiden2 = fromIntegral
+instance DivWidenOp Int64 Int64 where
+    divWiden1 = fromIntegral
+    divWiden2 = fromIntegral
+instance DivWidenOp Int Int32 where
+    divWiden1 = fromIntegral
+    divWiden2 = fromIntegral
+instance DivWidenOp Int32 Int where
+    divWiden1 = fromIntegral
+    divWiden2 = fromIntegral
+instance DivWidenOp Int Int64 where
+    divWiden1 = fromIntegral
+    divWiden2 = fromIntegral
+instance DivWidenOp Int64 Int where
+    divWiden1 = fromIntegral
+    divWiden2 = fromIntegral
+instance DivWidenOp Int32 Int64 where
+    divWiden1 = fromIntegral
+    divWiden2 = fromIntegral
+instance DivWidenOp Int64 Int32 where
+    divWiden1 = fromIntegral
+    divWiden2 = fromIntegral
+
+-- | Apply an arithmetic function after widening both operands via 'PromoteDiv'.
+divArithOp ::
+    forall a b.
+    (DivWidenOp a b) =>
+    (PromoteDiv a b -> PromoteDiv a b -> PromoteDiv a b) ->
+    a ->
+    b ->
+    PromoteDiv a b
+divArithOp f x y = f (divWiden1 @a @b x) (divWiden2 @a @b y)
+
+-- | Result type of a division-widening binary operator, accounting for nullable wrappers.
+type WidenResultDiv a b =
+    NullLift2Result a b (PromoteDiv (BaseType a) (BaseType b))
