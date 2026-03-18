@@ -1,10 +1,14 @@
+{-# LANGUAGE ConstrainedClassMethods #-}
 {-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 module DataFrame.Operations.Transformations where
 
@@ -27,6 +31,7 @@ import DataFrame.Internal.Column (
 import DataFrame.Internal.DataFrame (DataFrame (..), getColumn)
 import DataFrame.Internal.Expression
 import DataFrame.Internal.Interpreter
+import DataFrame.Internal.Nullable (BaseType)
 import DataFrame.Operations.Core
 
 -- | O(k) Apply a function to a given column in a dataframe.
@@ -188,20 +193,45 @@ applyAtIndex i f columnName df = case getColumn columnName df of
         Left e -> throw e
         Right column' -> insertColumn columnName column' df
 
--- | Replace all instances of `Nothing` in a column with the given value.
-impute ::
+-- | Core impute implementation for nullable columns. Silently no-ops on non-nullable columns.
+imputeCore ::
     forall b.
     (Columnable b) =>
     Expr (Maybe b) ->
     b ->
     DataFrame ->
     DataFrame
-impute (Col columnName) value df = case getColumn columnName df of
+imputeCore (Col columnName) value df = case getColumn columnName df of
     Nothing ->
         throw $ ColumnNotFoundException columnName "impute" (M.keys $ columnIndices df)
     Just (OptionalColumn _) -> case safeApply (fromMaybe value) columnName df of
         Left (TypeMismatchException context) -> throw $ TypeMismatchException (context{callingFunctionName = Just "impute"})
         Left exception -> throw exception
         Right res -> res
-    _ -> error $ "Cannot impute to a non-Empty column: " ++ T.unpack columnName
-impute _ _ df = df
+    _ -> df
+imputeCore _ _ df = df
+
+class (Columnable a) => ImputeOp a where
+    runImpute :: Expr a -> BaseType a -> DataFrame -> DataFrame
+    runImputeWith ::
+        (Columnable (BaseType a)) =>
+        (Expr (BaseType a) -> Expr (BaseType a)) ->
+        Expr a ->
+        DataFrame ->
+        DataFrame
+
+instance {-# OVERLAPPABLE #-} (Columnable a) => ImputeOp a where
+    runImpute _ _ df = df
+    runImputeWith _ _ df = df
+
+{- | Replace all instances of `Nothing` in a column with the given value.
+When the column is already non-nullable, this is a silent no-op.
+-}
+impute ::
+    forall a.
+    (ImputeOp a) =>
+    Expr a ->
+    BaseType a ->
+    DataFrame ->
+    DataFrame
+impute = runImpute

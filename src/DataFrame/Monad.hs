@@ -12,6 +12,8 @@ import DataFrame (DataFrame)
 import qualified DataFrame as D
 import DataFrame.Internal.Column (Columnable)
 import DataFrame.Internal.Expression (Expr (..))
+import DataFrame.Internal.Nullable (BaseType)
+import DataFrame.Operations.Transformations (ImputeOp)
 
 import qualified Data.Text as T
 import System.Random
@@ -75,7 +77,11 @@ filterJustM (Col name) = FrameM $ \df ->
 filterJustM expr =
     error $ "Cannot filter on compound expression: " ++ show expr
 
-imputeM :: (Columnable a) => Expr (Maybe a) -> a -> FrameM (Expr a)
+imputeM ::
+    (ImputeOp a, Columnable (BaseType a)) =>
+    Expr a ->
+    BaseType a ->
+    FrameM (Expr (BaseType a))
 imputeM expr@(Col name) value = FrameM $ \df ->
     let df' = D.impute expr value df
      in (df', Col name)

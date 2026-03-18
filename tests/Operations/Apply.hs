@@ -13,6 +13,7 @@ import qualified DataFrame.Functions as F
 import qualified DataFrame.Internal.Column as DI
 import qualified DataFrame.Internal.DataFrame as D
 import qualified DataFrame.Internal.DataFrame as DI
+import DataFrame.Operations.Statistics (imputeWith)
 import DataFrame.Operations.Transformations (impute)
 
 import Assertions
@@ -238,10 +239,28 @@ imputeColumnNotFound =
 imputeOnNonOptional :: Test
 imputeOnNonOptional =
     TestCase
-        ( assertExpectException
-            "[Error Case]"
-            "Cannot impute to a non-Empty column: plain"
-            (print $ impute (F.col @(Maybe Int) "plain") 0 imputeData)
+        ( assertEqual
+            "impute is a no-op on a non-nullable column"
+            imputeData
+            (impute (F.col @(Maybe Int) "plain") 0 imputeData)
+        )
+
+imputePlainNoOp :: Test
+imputePlainNoOp =
+    TestCase
+        ( assertEqual
+            "impute with non-Maybe expr is always a no-op"
+            imputeData
+            (impute (F.col @Int "plain") 0 imputeData)
+        )
+
+imputeWithPlainNoOp :: Test
+imputeWithPlainNoOp =
+    TestCase
+        ( assertEqual
+            "imputeWith with non-Maybe expr is always a no-op"
+            imputeData
+            (imputeWith id (F.col @Int "plain") imputeData)
         )
 
 tests :: [Test]
@@ -263,4 +282,6 @@ tests =
     , TestLabel "imputeHappyPath" imputeHappyPath
     , TestLabel "imputeColumnNotFound" imputeColumnNotFound
     , TestLabel "imputeOnNonOptional" imputeOnNonOptional
+    , TestLabel "imputePlainNoOp" imputePlainNoOp
+    , TestLabel "imputeWithPlainNoOp" imputeWithPlainNoOp
     ]

@@ -1,10 +1,12 @@
 {-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module DataFrame.Operations.Statistics where
 
@@ -30,12 +32,13 @@ import DataFrame.Internal.DataFrame (
  )
 import DataFrame.Internal.Expression
 import DataFrame.Internal.Interpreter
+import DataFrame.Internal.Nullable (BaseType)
 import DataFrame.Internal.Row (showValue, toAny)
 import DataFrame.Internal.Statistics
 import DataFrame.Internal.Types
 import DataFrame.Operations.Core
 import DataFrame.Operations.Subset (filterJust)
-import DataFrame.Operations.Transformations (impute)
+import DataFrame.Operations.Transformations (ImputeOp (..), imputeCore)
 import Text.Printf (printf)
 import Type.Reflection (typeRep)
 
@@ -287,22 +290,28 @@ this function:
 -- 20
 @
 -}
+instance {-# OVERLAPPING #-} (Columnable b) => ImputeOp (Maybe b) where
+    runImpute = imputeCore
+
+    runImputeWith f col@(Col columnName) df =
+        case interpret @b (filterJust columnName df) (f (Col @b columnName)) of
+            Left e -> throw e
+            Right (TColumn value) -> case headColumn @b value of
+                Left e -> throw e
+                Right h ->
+                    if all (== h) (toList @b value)
+                        then imputeCore col h df
+                        else error "Impute expression returned more than one value"
+    runImputeWith _ _ df = df
+
 imputeWith ::
-    forall b.
-    (Columnable b) =>
-    (Expr b -> Expr b) ->
-    Expr (Maybe b) ->
+    forall a.
+    (ImputeOp a, Columnable (BaseType a)) =>
+    (Expr (BaseType a) -> Expr (BaseType a)) ->
+    Expr a ->
     DataFrame ->
     DataFrame
-imputeWith f col@(Col columnName) df = case interpret @b (filterJust columnName df) (f (Col @b columnName)) of
-    Left e -> throw e
-    Right (TColumn value) -> case headColumn @b value of
-        Left e -> throw e
-        Right h ->
-            if all (== h) (toList @b value)
-                then impute col h df
-                else error "Impute expression returned more than one value"
-imputeWith _ _ df = df
+imputeWith = runImputeWith
 
 applyStatistic ::
     (VU.Vector Double -> Double) -> T.Text -> DataFrame -> Maybe Double
