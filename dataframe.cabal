@@ -24,7 +24,7 @@ extra-source-files: cbits/process_csv.h
                     tests/data/*.csv
                     tests/data/*.tsv
                     tests/data/*.parquet
-                    tests/data/*/*.parquet
+                    tests/data/sharded/*.parquet
                     tests/data/unstable_csv/*.csv
                     tests/data/unstable_csv/*.tsv
                     -- tests/data/*.md
