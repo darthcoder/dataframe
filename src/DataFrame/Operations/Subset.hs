@@ -33,6 +33,7 @@ import DataFrame.Errors (
 import DataFrame.Internal.Column
 import DataFrame.Internal.DataFrame (
     DataFrame (..),
+    derivingExpressions,
     empty,
     getColumn,
  )
@@ -242,7 +243,10 @@ select cs df
                 (T.pack $ show $ cs L.\\ columnNames df)
                 "select"
                 (columnNames df)
-    | otherwise = L.foldl' addKeyValue empty cs
+    | otherwise =
+        let result = L.foldl' addKeyValue empty cs
+            filteredExprs = M.filterWithKey (\k _ -> k `L.elem` cs) (derivingExpressions df)
+         in result{derivingExpressions = filteredExprs}
   where
     addKeyValue d k = fromMaybe df $ do
         col <- getColumn k df

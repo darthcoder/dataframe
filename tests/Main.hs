@@ -24,6 +24,7 @@ import qualified Operations.InsertColumn
 import qualified Operations.Join
 import qualified Operations.Merge
 import qualified Operations.Nullable
+import qualified Operations.Provenance
 import qualified Operations.ReadCsv
 import qualified Operations.Shuffle
 import qualified Operations.Sort
@@ -48,6 +49,7 @@ tests =
             ++ Operations.Join.tests
             ++ Operations.Merge.tests
             ++ Operations.Nullable.tests
+            ++ Operations.Provenance.tests
             ++ Operations.ReadCsv.tests
             ++ Operations.Shuffle.tests
             ++ Operations.Sort.tests

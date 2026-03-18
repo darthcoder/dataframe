@@ -91,7 +91,12 @@ deriveWithExpr ::
     forall a. (Columnable a) => T.Text -> Expr a -> DataFrame -> (Expr a, DataFrame)
 deriveWithExpr name expr df = case interpret @a df (normalize expr) of
     Left e -> throw e
-    Right (TColumn value) -> (Col name, insertColumn name value df)
+    Right (TColumn value) ->
+        ( Col name
+        , (insertColumn name value df)
+            { derivingExpressions = M.insert name (UExpr expr) (derivingExpressions df)
+            }
+        )
 
 deriveMany :: [NamedExpr] -> DataFrame -> DataFrame
 deriveMany exprs df =

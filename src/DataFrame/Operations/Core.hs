@@ -41,6 +41,7 @@ import DataFrame.Internal.Column (
 import DataFrame.Internal.DataFrame (
     DataFrame (..),
     columnIndices,
+    derivingExpressions,
     empty,
     getColumn,
  )
@@ -344,6 +345,7 @@ insertColumn name column d =
     let
         (r, c) = dataframeDimensions d
         n = max (columnLength column) r
+        exprs = M.delete name (derivingExpressions d)
      in
         case M.lookup name (columnIndices d) of
             Just i ->
@@ -351,13 +353,13 @@ insertColumn name column d =
                     (V.map (expandColumn n) (columns d V.// [(i, column)]))
                     (columnIndices d)
                     (n, c)
-                    M.empty
+                    exprs
             Nothing ->
                 DataFrame
                     (V.map (expandColumn n) (columns d `V.snoc` column))
                     (M.insert name c (columnIndices d))
                     (n, c + 1)
-                    M.empty
+                    exprs
 
 {- | /O(n)/ Clones a column and places it under a new name in the dataframe.
 
@@ -945,3 +947,22 @@ You must specify the type via type applications.
 -}
 columnAsList :: forall a. (Columnable a) => Expr a -> DataFrame -> [a]
 columnAsList expr df = either throw V.toList (columnAsVector expr df)
+
+{- | Returns the provenance of all columns in the DataFrame as a list of
+@(name, expression)@ pairs. Derived columns show their expression;
+raw columns show an identity @col \@type name@ expression.
+-}
+showDerivedExpressions :: DataFrame -> [NamedExpr]
+showDerivedExpressions df =
+    let exprs = derivingExpressions df
+        names = columnNames df
+        toNamedExpr name = case M.lookup name exprs of
+            Just uexpr -> (name, uexpr)
+            Nothing -> (name, identityUExpr name)
+     in map toNamedExpr names
+  where
+    identityUExpr name = case getColumn name df of
+        Just (BoxedColumn (_ :: V.Vector a)) -> UExpr (Col @a name)
+        Just (UnboxedColumn (_ :: VU.Vector a)) -> UExpr (Col @a name)
+        Just (OptionalColumn (_ :: V.Vector (Maybe a))) -> UExpr (Col @(Maybe a) name)
+        Nothing -> error $ "showDerivedExpressions: column not found: " ++ T.unpack name

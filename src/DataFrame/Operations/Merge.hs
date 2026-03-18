@@ -49,8 +49,11 @@ instance Semigroup D.DataFrame where
                                 Just a'' ->
                                     let concatedColumns = D.concatColumnsEither a'' b''
                                      in D.insertColumn name concatedColumns df
+            result = L.foldl' (addColumns a b) D.empty (D.columnNames a `L.union` D.columnNames b)
          in
-            L.foldl' (addColumns a b) D.empty (D.columnNames a `L.union` D.columnNames b)
+            result
+                { D.derivingExpressions = D.derivingExpressions a <> D.derivingExpressions b
+                }
 
 instance Monoid D.DataFrame where
     mempty = D.empty
@@ -58,7 +61,12 @@ instance Monoid D.DataFrame where
 -- | Add two dataframes side by side/horizontally.
 (|||) :: D.DataFrame -> D.DataFrame -> D.DataFrame
 (|||) a b =
-    D.fold
-        (\name acc -> D.insertColumn name (D.unsafeGetColumn name b) acc)
-        (D.columnNames b)
-        a
+    let result =
+            D.fold
+                (\name acc -> D.insertColumn name (D.unsafeGetColumn name b) acc)
+                (D.columnNames b)
+                a
+     in result
+            { D.derivingExpressions =
+                D.derivingExpressions result <> D.derivingExpressions b
+            }

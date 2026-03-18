@@ -263,6 +263,7 @@ test-suite tests
                    Operations.Join,
                    Operations.Merge,
                    Operations.Nullable,
+                   Operations.Provenance,
                    Operations.ReadCsv,
                    Operations.Shuffle,
                    Operations.Sort,
