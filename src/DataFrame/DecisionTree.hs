@@ -548,38 +548,108 @@ findBestGreedySplit cfg target conds df =
                             (boolExpansion (synthConfig cfg))
                         )
 
+-- | Unifies non-nullable and nullable Double expressions for feature generation.
+data NumExpr
+    = NDouble !(Expr Double)
+    | NMaybeDouble !(Expr (Maybe Double))
+
+numExprCols :: NumExpr -> [T.Text]
+numExprCols (NDouble e) = getColumns e
+numExprCols (NMaybeDouble e) = getColumns e
+
+numExprEq :: NumExpr -> NumExpr -> Bool
+numExprEq (NDouble e1) (NDouble e2) = e1 == e2
+numExprEq (NMaybeDouble e1) (NMaybeDouble e2) = e1 == e2
+numExprEq _ _ = False
+
+combineNumExprs :: NumExpr -> NumExpr -> [NumExpr]
+combineNumExprs (NDouble e1) (NDouble e2) =
+    [ NDouble (e1 .+ e2)
+    , NDouble (e1 .- e2)
+    , NDouble (e1 .* e2)
+    , NDouble
+        (F.ifThenElse (e2 ./= F.lit (0 :: Double)) (e1 ./ e2) (F.lit (0 :: Double)))
+    ]
+combineNumExprs (NDouble e1) (NMaybeDouble e2) =
+    [ NMaybeDouble (e1 .+ e2)
+    , NMaybeDouble (e1 .- e2)
+    , NMaybeDouble (e1 .* e2)
+    , NMaybeDouble
+        ( F.ifThenElse
+            (F.fromMaybe False (e2 ./= F.lit (0 :: Double)))
+            (e1 ./ e2)
+            (F.lit (Nothing :: Maybe Double))
+        )
+    ]
+combineNumExprs (NMaybeDouble e1) (NDouble e2) =
+    [ NMaybeDouble (e1 .+ e2)
+    , NMaybeDouble (e1 .- e2)
+    , NMaybeDouble (e1 .* e2)
+    , NMaybeDouble
+        ( F.ifThenElse
+            (e2 ./= F.lit (0 :: Double))
+            (e1 ./ e2)
+            (F.lit (Nothing :: Maybe Double))
+        )
+    ]
+combineNumExprs (NMaybeDouble e1) (NMaybeDouble e2) =
+    [ NMaybeDouble (e1 .+ e2)
+    , NMaybeDouble (e1 .- e2)
+    , NMaybeDouble (e1 .* e2)
+    , NMaybeDouble
+        ( F.ifThenElse
+            (F.fromMaybe False (e2 ./= F.lit (0 :: Double)))
+            (e1 ./ e2)
+            (F.lit (Nothing :: Maybe Double))
+        )
+    ]
+
 numericConditions :: TreeConfig -> DataFrame -> [Expr Bool]
 numericConditions = generateNumericConds
 
 generateNumericConds :: TreeConfig -> DataFrame -> [Expr Bool]
 generateNumericConds cfg df = do
     expr <- numericExprsWithTerms (synthConfig cfg) df
-    let thresholds = map (\p -> percentile p expr df) (percentiles cfg)
+    let thresholds = numericThresholds expr
     threshold <- thresholds
-    [ expr .<= F.lit threshold
-        , expr .>= F.lit threshold
-        , expr .< F.lit threshold
-        , expr .> F.lit threshold
+    numericCondsFromExpr expr threshold
+  where
+    numericThresholds (NDouble e) = map (\p -> percentile p e df) (percentiles cfg)
+    numericThresholds (NMaybeDouble e) = map (\p -> percentile p (F.fromMaybe 0 e) df) (percentiles cfg)
+
+    numericCondsFromExpr (NDouble e) t =
+        [e .<= F.lit t, e .>= F.lit t, e .< F.lit t, e .> F.lit t]
+    numericCondsFromExpr (NMaybeDouble e) t =
+        [ F.fromMaybe False (e .<= F.lit t)
+        , F.fromMaybe False (e .>= F.lit t)
+        , F.fromMaybe False (e .< F.lit t)
+        , F.fromMaybe False (e .> F.lit t)
         ]
 
-numericExprsWithTerms :: SynthConfig -> DataFrame -> [Expr Double]
+numericExprsWithTerms :: SynthConfig -> DataFrame -> [NumExpr]
 numericExprsWithTerms cfg df =
     concatMap (numericExprs cfg df [] 0) [0 .. maxExprDepth cfg]
 
-numericCols :: DataFrame -> [Expr Double]
+numericCols :: DataFrame -> [NumExpr]
 numericCols df = concatMap extract (columnNames df)
   where
     extract col = case unsafeGetColumn col df of
         UnboxedColumn (_ :: VU.Vector b) ->
             case testEquality (typeRep @b) (typeRep @Double) of
-                Just Refl -> [Col col]
+                Just Refl -> [NDouble (Col col)]
                 Nothing -> case sIntegral @b of
-                    STrue -> [F.toDouble (Col @b col)]
+                    STrue -> [NDouble (F.toDouble (Col @b col))]
+                    SFalse -> []
+        OptionalColumn (_ :: V.Vector (Maybe b)) ->
+            case testEquality (typeRep @b) (typeRep @Double) of
+                Just Refl -> [NMaybeDouble (Col @(Maybe b) col)]
+                Nothing -> case sIntegral @b of
+                    STrue -> [NMaybeDouble (F.whenPresent (realToFrac @b @Double) (Col @(Maybe b) col))]
                     SFalse -> []
         _ -> []
 
 numericExprs ::
-    SynthConfig -> DataFrame -> [Expr Double] -> Int -> Int -> [Expr Double]
+    SynthConfig -> DataFrame -> [NumExpr] -> Int -> Int -> [NumExpr]
 numericExprs cfg df prevExprs depth maxDepth
     | depth == 0 = baseExprs ++ numericExprs cfg df baseExprs (depth + 1) maxDepth
     | depth >= maxDepth = []
@@ -592,20 +662,16 @@ numericExprs cfg df prevExprs depth maxDepth
         | otherwise = do
             e1 <- prevExprs
             e2 <- baseExprs
-            let cols = getColumns e1 <> getColumns e2
+            let cols = numExprCols e1 <> numExprCols e2
             guard
-                ( e1 /= e2
+                ( not (numExprEq e1 e2)
                     && not
                         ( any
                             (\(l, r) -> l `elem` cols && r `elem` cols)
                             (disallowedCombinations cfg)
                         )
                 )
-            [ e1 + e2
-                , e1 - e2
-                , e1 * e2
-                , F.ifThenElse (e2 ./= (0 :: Expr Double)) (e1 / e2) 0
-                ]
+            combineNumExprs e1 e2
 
 boolExprs ::
     DataFrame -> [Expr Bool] -> [Expr Bool] -> Int -> Int -> [Expr Bool]
@@ -631,37 +697,9 @@ generateConditionsOld cfg df =
                 let ps = map (Lit . (`percentileOrd'` col)) [1, 25, 75, 99]
                  in map (F.lift2 (==) (Col @a colName)) ps
             (OptionalColumn (col :: V.Vector (Maybe a))) -> case sFloating @a of
-                STrue ->
-                    let doubleCol =
-                            VU.convert
-                                (V.map fromJust (V.filter isJust (V.map (fmap (realToFrac @a @Double)) col)))
-                     in zipWith
-                            ($)
-                            [ F.lift2 (==) (Col @(Maybe a) colName)
-                            , F.lift2 (<=) (Col @(Maybe a) colName)
-                            , F.lift2 (>=) (Col @(Maybe a) colName)
-                            ]
-                            ( Lit Nothing
-                                : map
-                                    (Lit . Just . realToFrac . (`percentile'` doubleCol))
-                                    (percentiles cfg)
-                            )
+                STrue -> [] -- handled by numericCols / numericExprs
                 SFalse -> case sIntegral @a of
-                    STrue ->
-                        let doubleCol =
-                                VU.convert
-                                    (V.map fromJust (V.filter isJust (V.map (fmap (fromIntegral @a @Double)) col)))
-                         in zipWith
-                                ($)
-                                [ F.lift2 (==) (Col @(Maybe a) colName)
-                                , F.lift2 (<=) (Col @(Maybe a) colName)
-                                , F.lift2 (>=) (Col @(Maybe a) colName)
-                                ]
-                                ( Lit Nothing
-                                    : map
-                                        (Lit . Just . round . (`percentile'` doubleCol))
-                                        (percentiles cfg)
-                                )
+                    STrue -> [] -- handled by numericCols / numericExprs
                     SFalse ->
                         map
                             (F.lift2 (==) (Col @(Maybe a) colName) . Lit . (`percentileOrd'` col))

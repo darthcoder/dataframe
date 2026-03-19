@@ -362,6 +362,8 @@ import DataFrame.Operations.Subset as Subset (
     sample,
     select,
     selectBy,
+    stratifiedSample,
+    stratifiedSplit,
     take,
     takeLast,
  )

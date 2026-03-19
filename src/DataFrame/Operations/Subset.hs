@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -36,10 +37,12 @@ import DataFrame.Internal.DataFrame (
     derivingExpressions,
     empty,
     getColumn,
+    unsafeGetColumn,
  )
 import DataFrame.Internal.Expression
 import DataFrame.Internal.Interpreter
 import DataFrame.Operations.Core
+import DataFrame.Operations.Merge ()
 import DataFrame.Operations.Transformations (apply)
 import System.Random
 import Type.Reflection
@@ -471,3 +474,81 @@ generateRandomVector pureGen k = VU.fromList $ go pureGen k
             (v, g') = uniformR (0 :: Double, 1 :: Double) g
          in
             v : go g' (n - 1)
+
+-- | Convert any Column to a vector of Text labels (one per row).
+columnToTextVec :: Column -> V.Vector T.Text
+columnToTextVec (BoxedColumn (col :: V.Vector a)) =
+    case testEquality (typeRep @a) (typeRep @T.Text) of
+        Just Refl -> col
+        Nothing -> V.map (T.pack . show) col
+columnToTextVec (UnboxedColumn col) = V.map (T.pack . show) (V.convert col)
+columnToTextVec (OptionalColumn col) = V.map (T.pack . show) col
+
+-- | Build a map from stringified label to row indices.
+groupByIndices :: Column -> M.Map T.Text (VU.Vector Int)
+groupByIndices col =
+    let textVec = columnToTextVec col
+        (grouped, _) =
+            V.foldl'
+                (\(!m, !i) key -> (M.insertWith (++) key [i] m, i + 1))
+                (M.empty, 0)
+                textVec
+     in M.map (VU.fromList . L.reverse) grouped
+
+-- | Select rows at the given indices from all columns.
+rowsAtIndices :: VU.Vector Int -> DataFrame -> DataFrame
+rowsAtIndices ixs df =
+    df
+        { columns = V.map (atIndicesStable ixs) (columns df)
+        , dataframeDimensions = (VU.length ixs, snd (dataframeDimensions df))
+        }
+
+{- | Sample a dataframe, preserving per-stratum proportions.
+
+==== __Example__
+@
+ghci> import System.Random
+ghci> D.stratifiedSample (mkStdGen 42) 0.8 "label" df
+@
+-}
+stratifiedSample ::
+    forall a g.
+    (SplitGen g, RandomGen g, Columnable a) =>
+    g -> Double -> Expr a -> DataFrame -> DataFrame
+stratifiedSample gen p strataCol df =
+    let col = case strataCol of
+            Col name -> unsafeGetColumn name df
+            _ -> unwrapTypedColumn (either throw id (interpret @a df strataCol))
+        groups = M.elems (groupByIndices col)
+        go _ [] = mempty
+        go g (ixs : rest) =
+            let stratum = rowsAtIndices ixs df
+                (g1, g2) = splitGen g
+             in sample g1 p stratum <> go g2 rest
+     in go gen groups
+
+{- | Split a dataframe into two, preserving per-stratum proportions.
+
+==== __Example__
+@
+ghci> import System.Random
+ghci> D.stratifiedSplit (mkStdGen 42) 0.8 "label" df
+@
+-}
+stratifiedSplit ::
+    forall a g.
+    (SplitGen g, RandomGen g, Columnable a) =>
+    g -> Double -> Expr a -> DataFrame -> (DataFrame, DataFrame)
+stratifiedSplit gen p strataCol df =
+    let col = case strataCol of
+            Col name -> unsafeGetColumn name df
+            _ -> unwrapTypedColumn (either throw id (interpret @a df strataCol))
+        groups = M.elems (groupByIndices col)
+        go _ [] = (mempty, mempty)
+        go g (ixs : rest) =
+            let stratum = rowsAtIndices ixs df
+                (g1, g2) = splitGen g
+                (tr, va) = randomSplit g1 p stratum
+                (trAcc, vaAcc) = go g2 rest
+             in (tr <> trAcc, va <> vaAcc)
+     in go gen groups

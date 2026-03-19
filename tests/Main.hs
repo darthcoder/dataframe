@@ -9,6 +9,7 @@ import GenDataFrame ()
 import Test.HUnit
 import Test.QuickCheck
 
+import qualified DecisionTree
 import qualified Functions
 import qualified IO.JSON
 import qualified Internal.Parsing
@@ -38,7 +39,8 @@ import qualified Properties
 tests :: Test
 tests =
     TestList $
-        Internal.Parsing.tests
+        DecisionTree.tests
+            ++ Internal.Parsing.tests
             ++ Operations.Aggregations.tests
             ++ Operations.Apply.tests
             ++ Operations.Core.tests
@@ -54,6 +56,7 @@ tests =
             ++ Operations.Shuffle.tests
             ++ Operations.Sort.tests
             ++ Operations.Statistics.tests
+            ++ Operations.Subset.hunitTests
             ++ Operations.Take.tests
             ++ Operations.Typing.tests
             ++ Functions.tests

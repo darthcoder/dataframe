@@ -53,13 +53,13 @@ main = do
             fitDecisionTree
                 ( defaultTreeConfig
                     { maxTreeDepth = 5
-                    , minSamplesSplit = 10
+                    , minSamplesSplit = 5
                     , minLeafSize = 3
                     , taoIterations = 100
                     , synthConfig =
                         defaultSynthConfig
-                            { complexityPenalty = 0.00
-                            , maxExprDepth = 2
+                            { complexityPenalty = 0.1
+                            , maxExprDepth = 3
                             , disallowedCombinations =
                                 [ (F.name age, F.name fare)
                                 , ("passenger_class", "number_of_siblings_and_spouses")

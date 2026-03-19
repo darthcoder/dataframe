@@ -1,11 +1,16 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Operations.Subset where
 
+import qualified Data.Text as T
+import qualified DataFrame as D
+import qualified DataFrame.Internal.Column as Col
 import DataFrame.Internal.DataFrame
-import qualified DataFrame.Operations.Core as D
-import qualified DataFrame.Operations.Subset as D
+import DataFrame.Operations.Merge ()
 import System.Random
+import Test.HUnit
 
 prop_dropZero :: DataFrame -> Bool
 prop_dropZero df = D.drop 0 df == df
@@ -75,6 +80,113 @@ prop_sampleEmptyApprox df =
         sampled = D.sample gen 0.0 df
      in fst (dataframeDimensions sampled) == 0
 
+prop_stratifiedSplit_deterministic :: DataFrame -> Bool
+prop_stratifiedSplit_deterministic _ =
+    let df =
+            D.fromNamedColumns
+                [ ("label", Col.fromList (replicate 50 ("A" :: T.Text) ++ replicate 50 "B"))
+                , ("val", Col.fromList ([1 .. 100] :: [Int]))
+                ]
+        (tr, va) = D.stratifiedSplit (mkStdGen 314) 0.7 (D.col @T.Text "label") df
+     in fst (dataframeDimensions tr) + fst (dataframeDimensions va) == 100
+
+strataDf :: DataFrame
+strataDf =
+    D.fromNamedColumns
+        [ ("label", Col.fromList (replicate 5 ("A" :: T.Text) ++ replicate 5 "B"))
+        , ("val", Col.fromList ([1 .. 10] :: [Int]))
+        ]
+
+unit_stratifiedSample_full :: Test
+unit_stratifiedSample_full =
+    TestCase $
+        let sampled = D.stratifiedSample (mkStdGen 42) 1.0 (D.col @T.Text "label") strataDf
+         in assertEqual
+                "p=1.0 preserves row count"
+                (fst $ dataframeDimensions strataDf)
+                (fst $ dataframeDimensions sampled)
+
+unit_stratifiedSplit_rowCount :: Test
+unit_stratifiedSplit_rowCount =
+    TestCase $
+        let (tr, va) = D.stratifiedSplit (mkStdGen 99) 0.8 (D.col @T.Text "label") strataDf
+         in assertEqual
+                "train+validation == total"
+                (fst $ dataframeDimensions strataDf)
+                (fst (dataframeDimensions tr) + fst (dataframeDimensions va))
+
+unit_stratifiedSplit_singleRowStratum :: Test
+unit_stratifiedSplit_singleRowStratum =
+    TestCase $
+        let tinyDf =
+                D.fromNamedColumns
+                    [ ("label", Col.fromList (["A", "A", "A", "A", "A", "B"] :: [T.Text]))
+                    , ("val", Col.fromList ([1 .. 6] :: [Int]))
+                    ]
+            (tr, va) = D.stratifiedSplit (mkStdGen 7) 0.8 (D.col @T.Text "label") tinyDf
+         in assertEqual
+                "single-row stratum: no rows lost"
+                (fst $ dataframeDimensions tinyDf)
+                (fst (dataframeDimensions tr) + fst (dataframeDimensions va))
+
+-- | Count occurrences of a label in a column, expressed as a fraction of total rows.
+labelProportion :: T.Text -> T.Text -> DataFrame -> Double
+labelProportion col label df =
+    let total = fst (dataframeDimensions df)
+        vals = case getColumn col df of
+            Just c -> Col.toList @T.Text c
+            Nothing -> []
+        n = length (filter (== label) vals)
+     in fromIntegral n / fromIntegral total
+
+unit_stratifiedSplit_proportions :: Test
+unit_stratifiedSplit_proportions =
+    TestCase $
+        let aCount = 100
+            bCount = 50
+            df =
+                D.fromNamedColumns
+                    [
+                        ( "label"
+                        , Col.fromList (replicate aCount ("A" :: T.Text) ++ replicate bCount "B")
+                        )
+                    , ("val", Col.fromList ([1 .. aCount + bCount] :: [Int]))
+                    ]
+            (tr, va) = D.stratifiedSplit (mkStdGen 42) 0.8 (D.col @T.Text "label") df
+            origProp = labelProportion "label" "A" df
+            trProp = labelProportion "label" "A" tr
+            vaProp = labelProportion "label" "A" va
+            tol = 0.05 :: Double
+         in do
+                assertBool
+                    ( "train A-proportion "
+                        ++ show trProp
+                        ++ " differs from original "
+                        ++ show origProp
+                        ++ " by more than "
+                        ++ show tol
+                    )
+                    (abs (trProp - origProp) < tol)
+                assertBool
+                    ( "validation A-proportion "
+                        ++ show vaProp
+                        ++ " differs from original "
+                        ++ show origProp
+                        ++ " by more than "
+                        ++ show tol
+                    )
+                    (abs (vaProp - origProp) < tol)
+
+hunitTests :: [Test]
+hunitTests =
+    [ TestLabel "unit_stratifiedSample_full" unit_stratifiedSample_full
+    , TestLabel "unit_stratifiedSplit_rowCount" unit_stratifiedSplit_rowCount
+    , TestLabel
+        "unit_stratifiedSplit_singleRowStratum"
+        unit_stratifiedSplit_singleRowStratum
+    , TestLabel "unit_stratifiedSplit_proportions" unit_stratifiedSplit_proportions
+    ]
+
 tests =
     [ prop_dropZero
     , prop_takeZero
@@ -92,4 +204,5 @@ tests =
     , prop_excludeAll
     , prop_cubePreservesSmall
     , prop_sampleEmptyApprox
+    , prop_stratifiedSplit_deterministic
     ]
