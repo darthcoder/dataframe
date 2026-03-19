@@ -183,32 +183,6 @@ unsafeCastExpr =
         "unsafeCastExpr"
         (fromRight (error "unsafeCastExpr: unexpected Nothing in column"))
 
-liftDecorated ::
-    (Columnable a, Columnable b) =>
-    (a -> b) -> T.Text -> Maybe T.Text -> Expr a -> Expr b
-liftDecorated f name rep = Unary (MkUnaryOp{unaryFn = f, unaryName = name, unarySymbol = rep})
-
-lift2Decorated ::
-    (Columnable c, Columnable b, Columnable a) =>
-    (c -> b -> a) ->
-    T.Text ->
-    Maybe T.Text ->
-    Bool ->
-    Int ->
-    Expr c ->
-    Expr b ->
-    Expr a
-lift2Decorated f name rep comm prec =
-    Binary
-        ( MkBinaryOp
-            { binaryFn = f
-            , binaryName = name
-            , binarySymbol = rep
-            , binaryCommutative = comm
-            , binaryPrecedence = prec
-            }
-        )
-
 toDouble :: (Columnable a, Real a) => Expr a -> Expr Double
 toDouble =
     Unary
@@ -369,13 +343,13 @@ fromJust = liftDecorated Maybe.fromJust "fromJust" Nothing
 whenPresent ::
     forall a b.
     (Columnable a, Columnable b) => (a -> b) -> Expr (Maybe a) -> Expr (Maybe b)
-whenPresent f = lift (fmap f)
+whenPresent f = liftDecorated (fmap f) "whenPresent" Nothing
 
 whenBothPresent ::
     forall a b c.
     (Columnable a, Columnable b, Columnable c) =>
     (a -> b -> c) -> Expr (Maybe a) -> Expr (Maybe b) -> Expr (Maybe c)
-whenBothPresent f = lift2 (\l r -> f <$> l <*> r)
+whenBothPresent f = lift2Decorated (\l r -> f <$> l <*> r) "whenBothPresent" Nothing False 0
 
 recode ::
     forall a b.
@@ -453,7 +427,7 @@ bind ::
     forall a b m.
     (Columnable a, Columnable (m a), Monad m, Columnable b, Columnable (m b)) =>
     (a -> m b) -> Expr (m a) -> Expr (m b)
-bind f = lift (>>= f)
+bind f = liftDecorated (>>= f) "bind" Nothing
 
 -- See Section 2.4 of the Haskell Report https://www.haskell.org/definition/haskell2010.pdf
 isReservedId :: T.Text -> Bool
