@@ -800,7 +800,7 @@ zipWithColumns ::
 zipWithColumns f (UnboxedColumn (column :: VU.Vector d)) (UnboxedColumn (other :: VU.Vector e)) = case testEquality (typeRep @a) (typeRep @d) of
     Just Refl -> case testEquality (typeRep @b) (typeRep @e) of
         Just Refl -> pure $ case sUnbox @c of
-            STrue -> fromUnboxedVector (VU.zipWith f column other)
+            STrue -> UnboxedColumn (VU.zipWith f column other)
             SFalse -> fromVector $ VB.zipWith f (VG.convert column) (VG.convert other)
         Nothing ->
             Left $
