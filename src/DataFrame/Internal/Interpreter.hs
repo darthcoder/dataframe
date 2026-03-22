@@ -604,8 +604,7 @@ eval (GroupCtx gdf) expr@(Agg (FoldAgg _ Nothing (f :: a -> b -> a)) (Col name :
                                 ""
                                 (M.keys $ columnIndices $ fullDataframe gdf)
                     Just col ->
-                        Flat . fromVector
-                            <$> foldl1DirectGroups @b f col (valueIndices gdf) (offsets gdf)
+                        Flat <$> foldl1DirectGroups @b f col (valueIndices gdf) (offsets gdf)
 -- Fast path: MergeAgg on a bare Col in GroupCtx.
 
 eval
@@ -675,10 +674,10 @@ eval
                         InternalException
                             "Cannot apply a merge aggregation to a scalar"
                 Flat col ->
-                    Scalar . finalize <$> foldlColumnWith @b step seed col
+                    Scalar . finalize <$> foldlColumn @b step seed col
                 Group gs ->
                     Flat . fromVector
-                        <$> V.mapM (fmap finalize . foldlColumnWith @b step seed) gs
+                        <$> V.mapM (fmap finalize . foldlColumn @b step seed) gs
 
 -- Aggregation: FoldAgg without seed (fold1) ------------------------------
 
