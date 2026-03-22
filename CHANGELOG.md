@@ -1,5 +1,15 @@
 # Revision history for dataframe
 
+## 1.0.0.0
+* Fix mappend to respect schema of empty columns.
+* Add cast operators that force column schema
+* Add null aware operators so some operations are easier.
+* Add arrow shim with python example.
+* Add numeric promotion for numeric operations.
+* Add column provenance tracking
+* Add stratified sampling
+* Read files from hugging face
+
 ## 0.7.0.0
 * This release adds A LOT of AI code to the repo (which we'll now pause in favour of refactoring, testing, and completeness for 1.0)
 * The lazy reader now has a custom binary format that it spills to. This almost halved the time it takes to run the 1 billion row challenge. The lazy evaluation now also supports Parquet.
