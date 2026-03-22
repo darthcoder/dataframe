@@ -656,11 +656,11 @@ $(F.declareColumnsFromCsvWithOpts (D.defaultReadOptions{D.typeSpec = D.InferFrom
 housing <- D.readCsv "../data/housing.csv"
 
 pipelined = execFrameM housing $ do
-    isExpensive       <- deriveM "is_expensive"        (median_house_value .>= 500000)
+    isExpensive       <- deriveM "is_expensive"        (median_house_value .>=. 500000)
     roomsPerHousehold <- deriveM "rooms_per_household" (total_rooms / households)
     meanBeds          <- inspectM (D.meanMaybe total_bedrooms)
     totalBedrooms     <- imputeM  total_bedrooms meanBeds
-    filterWhereM (isExpensive .&& roomsPerHousehold .>= 7 .&& totalBedrooms .>= 200)
+    filterWhereM (isExpensive .&&. roomsPerHousehold .>=. 7 .&&. totalBedrooms .>=. 200)
 
 TIO.putStrLn $ D.toMarkdownTable $ D.take 5 pipelined
 ```
@@ -684,7 +684,7 @@ Inside the `do`-block, `<-` binds the typed `Expr` returned by each step; those 
 
 ```haskell
 ((isExp, bedrooms), housingEnriched) = runFrameM housing $ do
-    isExp    <- deriveM "is_expensive" (median_house_value .>= 500000)
+    isExp    <- deriveM "is_expensive" (median_house_value .>=. 500000)
     meanBeds <- inspectM (D.meanMaybe total_bedrooms)
     bedrooms <- imputeM  total_bedrooms meanBeds
     pure (isExp, bedrooms)
@@ -891,7 +891,7 @@ Build and run a lazy pipeline:
 ```haskell
 lazyQuery =
     L.scanCsv housingSchema "../data/housing.csv"
-        |> L.filter (F.col @Double "median_house_value" .>= 300000)
+        |> L.filter (F.col @Double "median_house_value" .>=. 300000)
         |> L.select ["longitude","latitude","median_house_value","ocean_proximity"]
         |> L.take 10
 

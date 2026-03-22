@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -12,7 +13,7 @@ import DataFrame.Internal.Column
 import DataFrame.Internal.DataFrame (DataFrame (..), unsafeGetColumn)
 import DataFrame.Internal.Expression (Expr (..), eSize, getColumns)
 import DataFrame.Internal.Interpreter (interpret)
-import DataFrame.Internal.Statistics (percentile', percentileOrd')
+import DataFrame.Internal.Statistics (percentileOrd')
 import DataFrame.Internal.Types
 import DataFrame.Operations.Core (columnNames, nRows)
 import DataFrame.Operations.Subset (exclude, filterWhere)
@@ -21,9 +22,12 @@ import Control.Exception (throw)
 import Control.Monad (guard)
 import Data.Containers.ListUtils (nubOrd)
 import Data.Function (on)
+#if MIN_VERSION_base(4,20,0)
+import Data.List (maximumBy, minimumBy, sort, sortBy)
+#else
 import Data.List (foldl', maximumBy, minimumBy, sort, sortBy)
+#endif
 import qualified Data.Map.Strict as M
-import Data.Maybe
 import qualified Data.Text as T
 import Data.Type.Equality
 import qualified Data.Vector as V

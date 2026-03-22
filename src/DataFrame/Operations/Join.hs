@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NumericUnderscores #-}
@@ -13,7 +14,9 @@ import Control.Applicative ((<|>))
 import Control.Monad (forM_, when)
 import Control.Monad.ST (ST, runST)
 import qualified Data.HashMap.Strict as HM
+#if !MIN_VERSION_base(4,20,0)
 import Data.List (foldl')
+#endif
 import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe)
 import Data.STRef (newSTRef, readSTRef, writeSTRef)

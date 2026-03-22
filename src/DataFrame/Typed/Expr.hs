@@ -65,11 +65,25 @@ module DataFrame.Typed.Expr (
     (.>=.),
     (.>.),
 
+    -- * Same-type arithmetic operators
+    (.+.),
+    (.-.),
+    (.*.),
+    (./.),
+
+    -- * Same-type exponentiation operators
+    (.^^.),
+    (.^.),
+
     -- * Nullable-aware arithmetic operators
     (.+),
     (.-),
     (.*),
     (./),
+
+    -- * Nullable-aware exponentiation operators
+    (.^^),
+    (.^),
 
     -- * Nullable-aware comparison operators (three-valued logic)
     (.==),
@@ -82,6 +96,8 @@ module DataFrame.Typed.Expr (
     -- * Logical operators
     (.&&.),
     (.||.),
+    (.&&),
+    (.||),
     DataFrame.Typed.Expr.not,
 
     -- * Aggregation combinators
@@ -253,8 +269,12 @@ nullLift2 ::
 nullLift2 f (TExpr a) (TExpr b) = TExpr (Binary (MkBinaryOp (applyNull2 f) "nullLift2" Nothing False 0) a b)
 
 infixl 4 .==., ./=., .<., .<=., .>=., .>.
-infixr 3 .&&.
-infixr 2 .||.
+infix 4 .==, ./=, .<, .<=, .>=, .>
+infixr 3 .&&., .&&
+infixr 2 .||., .||
+infixl 6 .+., .-.
+infixl 7 .*., ./.
+infix 8 .^^., .^^, .^., .^
 
 (.==.) ::
     (Columnable a, Eq a) => TExpr cols a -> TExpr cols a -> TExpr cols Bool
@@ -280,11 +300,56 @@ infixr 2 .||.
     (Columnable a, Ord a) => TExpr cols a -> TExpr cols a -> TExpr cols Bool
 (.>.) (TExpr a) (TExpr b) = TExpr (Binary (MkBinaryOp (>) "gt" (Just ">") False 4) a b)
 
+-- Same-type arithmetic operators
+
+(.+.) :: (Columnable a, Num a) => TExpr cols a -> TExpr cols a -> TExpr cols a
+(.+.) = (+)
+
+(.-.) :: (Columnable a, Num a) => TExpr cols a -> TExpr cols a -> TExpr cols a
+(.-.) = (-)
+
+(.*.) :: (Columnable a, Num a) => TExpr cols a -> TExpr cols a -> TExpr cols a
+(.*.) = (*)
+
+(./.) ::
+    (Columnable a, Fractional a) => TExpr cols a -> TExpr cols a -> TExpr cols a
+(./.) = (/)
+
+-- Same-type exponentiation operators
+
+(.^^.) ::
+    (Columnable a, Columnable b, Fractional a, Integral b) =>
+    TExpr cols a -> TExpr cols b -> TExpr cols a
+(.^^.) (TExpr a) (TExpr b) = TExpr (Binary (MkBinaryOp (^^) "pow" (Just ".^^.") False 8) a b)
+
+(.^.) ::
+    (Columnable a, Columnable b, Num a, Integral b) =>
+    TExpr cols a -> TExpr cols b -> TExpr cols a
+(.^.) (TExpr a) (TExpr b) = TExpr (Binary (MkBinaryOp (^) "pow" (Just ".^.") False 8) a b)
+
 (.&&.) :: TExpr cols Bool -> TExpr cols Bool -> TExpr cols Bool
-(.&&.) (TExpr a) (TExpr b) = TExpr (Binary (MkBinaryOp (&&) "and" (Just "&&") True 3) a b)
+(.&&.) (TExpr a) (TExpr b) = TExpr (Binary (MkBinaryOp (&&) "and" (Just ".&&.") True 3) a b)
 
 (.||.) :: TExpr cols Bool -> TExpr cols Bool -> TExpr cols Bool
-(.||.) (TExpr a) (TExpr b) = TExpr (Binary (MkBinaryOp (||) "or" (Just "||") True 2) a b)
+(.||.) (TExpr a) (TExpr b) = TExpr (Binary (MkBinaryOp (||) "or" (Just ".||.") True 2) a b)
+
+-- | Nullable-aware logical AND. Returns @Maybe Bool@ when either operand is nullable.
+(.&&) ::
+    (NullableCmpOp a b (NullCmpResult a b), BaseType a ~ Bool) =>
+    TExpr cols a ->
+    TExpr cols b ->
+    TExpr cols (NullCmpResult a b)
+(.&&) (TExpr a) (TExpr b) =
+    TExpr (Binary (MkBinaryOp (nullCmpOp (&&)) "nulland" (Just ".&&") True 3) a b)
+
+-- | Nullable-aware logical OR. Returns @Maybe Bool@ when either operand is nullable.
+(.||) ::
+    (NullableCmpOp a b (NullCmpResult a b), BaseType a ~ Bool) =>
+    TExpr cols a ->
+    TExpr cols b ->
+    TExpr cols (NullCmpResult a b)
+(.||) (TExpr a) (TExpr b) =
+    TExpr (Binary (MkBinaryOp (nullCmpOp (||)) "nullor" (Just ".||") True 2) a b)
 
 -------------------------------------------------------------------------------
 -- Nullable-aware arithmetic operators
@@ -292,7 +357,6 @@ infixr 2 .||.
 
 infixl 6 .+, .-
 infixl 7 .*, ./
-infix 4 .==, ./=, .<, .<=, .>=, .>
 
 {- | Nullable-aware addition. Works for all combinations of nullable\/non-nullable operands.
 @col \@\"x\" '.+' col \@\"y\"  -- :: TExpr cols (Maybe Int)  when y :: Maybe Int@
@@ -363,6 +427,34 @@ infix 4 .==, ./=, .<, .<=, .>=, .>
             a
             b
         )
+
+-- | Nullable-aware exponentiation (fractional base, integral exponent).
+(.^^) ::
+    ( Columnable (BaseType a)
+    , Columnable (BaseType b)
+    , Fractional (BaseType a)
+    , Integral (BaseType b)
+    , NumericWidenOp (BaseType a) (BaseType b)
+    , NullLift2Op a b (BaseType a) a
+    , Num (Promote (BaseType a) (BaseType b))
+    ) =>
+    TExpr cols a -> TExpr cols b -> TExpr cols a
+(.^^) (TExpr a) (TExpr b) =
+    TExpr (Binary (MkBinaryOp (applyNull2 (^^)) "pow" (Just ".^^") False 8) a b)
+
+-- | Nullable-aware exponentiation (num base, integral exponent).
+(.^) ::
+    ( Columnable (BaseType a)
+    , Columnable (BaseType b)
+    , Num (BaseType a)
+    , Integral (BaseType b)
+    , NumericWidenOp (BaseType a) (BaseType b)
+    , NullLift2Op a b (BaseType a) a
+    , Num (Promote (BaseType a) (BaseType b))
+    ) =>
+    TExpr cols a -> TExpr cols b -> TExpr cols a
+(.^) (TExpr a) (TExpr b) =
+    TExpr (Binary (MkBinaryOp (applyNull2 (^)) "pow" (Just ".^") False 8) a b)
 
 -------------------------------------------------------------------------------
 -- Nullable-aware comparison operators (three-valued logic)

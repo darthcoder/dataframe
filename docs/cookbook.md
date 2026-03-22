@@ -25,10 +25,10 @@ One of the most fundamental operations in data analysis is filtering - selecting
 
 ### Basic Comparisons
 
-The `filterWhere` function takes a boolean expression and returns only the rows where that expression evaluates to true. For example, to find rows where a column equals a specific value, we use the `.==` operator:
+The `filterWhere` function takes a boolean expression and returns only the rows where that expression evaluates to true. For example, to find rows where a column equals a specific value, we use the `.==.` operator (same-type, non-nullable) or `.==` (nullable-aware):
 
 ```haskell
-df |> D.filterWhere (columnName .== value)
+df |> D.filterWhere (columnName .==. value)
 ```
 
 The pipe operator `|>` allows us to chain operations in a readable left-to-right style, similar to Unix pipes.
@@ -42,7 +42,7 @@ Query all columns for a city with the ID 1661.
 ### Solution
 
 ```haskell
-dataframe> df |> D.filterWhere (id .== 1661)
+dataframe> df |> D.filterWhere (id .==. 1661)
 -----------------------------------------------------
   id  |  name  | country_code | district | population
 ------|--------|--------------|----------|-----------
@@ -60,7 +60,7 @@ Query all columns of every Japanese city. The `country_code` for Japan is "JPN".
 ### Solution
 
 ```haskell
-dataframe> df |> D.filterWhere (country_code .== "JPN")
+dataframe> df |> D.filterWhere (country_code .==. "JPN")
 --------------------------------------------------------
   id  |   name   | country_code | district  | population
 ------|----------|--------------|-----------|-----------
@@ -77,14 +77,14 @@ dataframe> df |> D.filterWhere (country_code .== "JPN")
 
 Often you'll need to filter on multiple conditions simultaneously. You can combine boolean expressions using logical operators:
 
-- `.&&` for AND (both conditions must be true)
-- `.||` for OR (either condition can be true)
-- `.>`, `.>=`, `.<`, `.<=` for comparisons
+- `.&&.` for AND (both conditions must be true, non-nullable `Bool`); `.&&` for nullable-aware AND
+- `.||.` for OR (either condition can be true, non-nullable `Bool`); `.||` for nullable-aware OR
+- `.>`, `.>=`, `.<`, `.<=` for comparisons (nullable-aware); `.>.`, `.>=.`, `.<.`, `.<=.` for same-type strict
 
 For example, to find cities with large populations in a specific country:
 
 ```haskell
-df |> D.filterWhere ((population .> 100000) .&& (country_code .== "USA"))
+df |> D.filterWhere ((population .>. 100000) .&&. (country_code .==. "USA"))
 ```
 
 **Exercise 3: Basic filtering (cont)**
@@ -101,7 +101,7 @@ Query all columns for all American cities in city dataframe with:
 ```haskell
 dataframe> D.readCsv "./data/country.csv"
 dataframe> :declareColumns df
-dataframe> df |> D.filterWhere ((population .> 100000) .&& (country_code .== "USA"))
+dataframe> df |> D.filterWhere ((population .>. 100000) .&&. (country_code .==. "USA"))
 --------------------------------------------------------------
   id  |     name      | country_code |  district  | population
 ------|---------------|--------------|------------|-----------
@@ -197,7 +197,7 @@ Query the names of all the Japanese cities and show only the first 5 results.
 ### Solution
 
 ```haskell
-dataframe> df |> D.filterWhere (country_code .== "JPN") |> D.select [F.name name] |> D.take 5
+dataframe> df |> D.filterWhere (country_code .==. "JPN") |> D.select [F.name name] |> D.take 5
 ---------
    name
 ---------
@@ -406,7 +406,7 @@ Read rows where `cyl >= 6`, but return only the `mpg` column.
 dataframe> D.readParquetWithOpts
 dataframe|   ( D.defaultParquetReadOptions
 dataframe|       { D.selectedColumns = Just ["mpg"]
-dataframe|       , D.predicate = Just (cyl .>= 6)
+dataframe|       , D.predicate = Just (cyl .>=. 6)
 dataframe|       }
 dataframe|   )
 dataframe|   "./data/mtcars.parquet"

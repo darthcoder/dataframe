@@ -1,4 +1,3 @@
-{-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -15,7 +14,7 @@ import Control.Monad (join)
 import Data.Maybe (fromMaybe)
 import qualified Data.Proxy as P
 import Data.Time
-import Data.Type.Equality (TestEquality (..), type (:~:) (Refl))
+import Data.Type.Equality (TestEquality (..))
 import DataFrame.Internal.Column (Column (..), fromVector)
 import DataFrame.Internal.DataFrame (DataFrame (..), unsafeGetColumn)
 import DataFrame.Internal.Parsing
