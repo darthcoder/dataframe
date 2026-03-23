@@ -36,9 +36,9 @@ import DataFrame.Internal.Nullable (
  )
 import DataFrame.Internal.Types (Promote, PromoteDiv)
 
-infix 8 .^^, .^^., .^, .^.
-infix 6 .+, .-
-infix 7 .*, ./
+infixr 8 .^^, .^^., .^, .^.
+infixl 7 .*, ./, .*., ./.
+infixl 6 .+, .-, .+., .-.
 infix 4 .==, .==., .<, .<., .<=, .<=., .>=, .>=., .>, .>., ./=, ./=.
 infixr 3 .&&, .&&.
 infixr 2 .||, .||.

@@ -274,7 +274,7 @@ infixr 3 .&&., .&&
 infixr 2 .||., .||
 infixl 6 .+., .-.
 infixl 7 .*., ./.
-infix 8 .^^., .^^, .^., .^
+infixr 8 .^^., .^^, .^., .^
 
 (.==.) ::
     (Columnable a, Eq a) => TExpr cols a -> TExpr cols a -> TExpr cols Bool
