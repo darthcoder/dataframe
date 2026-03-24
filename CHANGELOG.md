@@ -1,5 +1,13 @@
 # Revision history for dataframe
 
+## 1.0.0.1
+* toMarkdownTable is now toMarkdown (mostly used internally)
+* Provide toMarkdown' that outputs string
+* Add associativity to nullable operators
+* Better null dataframe handling/error messages for core operations.
+* Fix some function display names.
+* Examples now build with CI
+
 ## 1.0.0.0
 * Fix mappend to respect schema of empty columns.
 * Add cast operators that force column schema
