@@ -15,6 +15,7 @@ module DataFrame.IO.Persistent.TH (
 ) where
 
 import Control.Monad (forM, when)
+import Data.Char
 import Data.List (foldl')
 import Data.Text (Text)
 import qualified Data.Text as T

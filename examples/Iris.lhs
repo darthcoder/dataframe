@@ -27,7 +27,7 @@ Think of these like compiler flags in C++ or decorator syntax in Python:
 > {-# LANGUAGE RecordWildCards #-}
 > {-# LANGUAGE TypeApplications #-}
 >
-> module Main where
+> module Iris (run) where
 
 Now we import the libraries we need. This is similar to `import` statements
 in Python or `#include` in C++:
@@ -274,8 +274,8 @@ Main Program
 Now we bring it all together! The `do` keyword starts a sequence of operations.
 Think of this like the `if __name__ == "__main__":` block in Python:
 
-> main :: IO ()
-> main = do
+> run :: IO ()
+> run = do
 >     -- Step 1: Load the dataset
 >     -- ========================
 >     df <- D.readParquet "../data/iris.parquet"

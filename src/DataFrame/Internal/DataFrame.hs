@@ -24,6 +24,7 @@ import DataFrame.Internal.Column
 import DataFrame.Internal.Expression
 import Text.Printf
 import Type.Reflection (typeRep)
+import Prelude hiding (null)
 
 data DataFrame = DataFrame
     { columns :: V.Vector Column
@@ -97,8 +98,12 @@ instance Show DataFrame where
             T.unpack (asText d' False) ++ (if r > rows then truncationInfo else "")
 
 -- | For showing the dataframe as markdown in notebooks.
-toMarkdownTable :: DataFrame -> T.Text
-toMarkdownTable df = asText df True
+toMarkdown :: DataFrame -> T.Text
+toMarkdown df = asText df True
+
+-- | For showing the dataframe as a string markdown in notebooks.
+toMarkdown' :: DataFrame -> String
+toMarkdown' = T.unpack . toMarkdown
 
 asText :: DataFrame -> Bool -> T.Text
 asText d properMarkdown =
@@ -148,9 +153,11 @@ Just (UnboxedColumn ...)
 Nothing
 -}
 getColumn :: T.Text -> DataFrame -> Maybe Column
-getColumn name df = do
-    i <- columnIndices df M.!? name
-    columns df V.!? i
+getColumn name df
+    | null df = Nothing
+    | otherwise = do
+        i <- columnIndices df M.!? name
+        columns df V.!? i
 
 {- | Retrieves a column by name from the dataframe, throwing an exception if not found.
 

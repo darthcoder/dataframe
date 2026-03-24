@@ -44,6 +44,7 @@ import DataFrame.Internal.DataFrame (
     derivingExpressions,
     empty,
     getColumn,
+    null,
  )
 import DataFrame.Internal.Expression
 import DataFrame.Internal.Interpreter
@@ -389,13 +390,15 @@ insertColumn name column d =
 @
 -}
 cloneColumn :: T.Text -> T.Text -> DataFrame -> DataFrame
-cloneColumn original new df = fromMaybe
-    ( throw $
-        ColumnNotFoundException original "cloneColumn" (M.keys $ columnIndices df)
-    )
-    $ do
-        column <- getColumn original df
-        return $ insertColumn new column df
+cloneColumn original new df
+    | null df = throw (EmptyDataSetException "cloneColumn")
+    | otherwise = fromMaybe
+        ( throw $
+            ColumnNotFoundException original "cloneColumn" (M.keys $ columnIndices df)
+        )
+        $ do
+            column <- getColumn original df
+            return $ insertColumn new column df
 
 {- | /O(n)/ Renames a single column.
 
@@ -479,13 +482,15 @@ renameMany = fold (uncurry rename)
 
 renameSafe ::
     T.Text -> T.Text -> DataFrame -> Either DataFrameException DataFrame
-renameSafe orig new df = fromMaybe
-    (Left $ ColumnNotFoundException orig "rename" (M.keys $ columnIndices df))
-    $ do
-        columnIndex <- M.lookup orig (columnIndices df)
-        let origRemoved = M.delete orig (columnIndices df)
-        let newAdded = M.insert new columnIndex origRemoved
-        return (Right df{columnIndices = newAdded})
+renameSafe orig new df
+    | null df = throw (EmptyDataSetException "rename")
+    | otherwise = fromMaybe
+        (Left $ ColumnNotFoundException orig "rename" (M.keys $ columnIndices df))
+        $ do
+            columnIndex <- M.lookup orig (columnIndices df)
+            let origRemoved = M.delete orig (columnIndices df)
+            let newAdded = M.insert new columnIndex origRemoved
+            return (Right df{columnIndices = newAdded})
 
 data ColumnInfo = ColumnInfo
     { nameOfColumn :: !T.Text
@@ -578,15 +583,6 @@ nulls (BoxedColumn (xs :: V.Vector a)) = case testEquality (typeRep @a) (typeRep
                 Nothing -> 0
             _ -> 0
 nulls _ = 0
-
-partiallyParsed :: Column -> Int
-partiallyParsed (BoxedColumn (xs :: V.Vector a)) =
-    case typeRep @a of
-        App (App tycon t1) t2 -> case eqTypeRep tycon (typeRep @Either) of
-            Just HRefl -> VG.length $ VG.filter isLeft xs
-            Nothing -> 0
-        _ -> 0
-partiallyParsed _ = 0
 
 {- | Creates a dataframe from a list of tuples with name and column.
 
@@ -684,13 +680,15 @@ fromRows names rows =
 -}
 valueCounts ::
     forall a. (Ord a, Columnable a) => Expr a -> DataFrame -> [(a, Int)]
-valueCounts expr df = case columnAsVector expr df of
-    Left e -> throw e
-    Right column' ->
-        let
-            column = V.foldl' (\m v -> MS.insertWith (+) v (1 :: Int) m) M.empty column'
-         in
-            M.toAscList column
+valueCounts expr df
+    | null df = throw (EmptyDataSetException "valueCounts")
+    | otherwise = case columnAsVector expr df of
+        Left e -> throw e
+        Right column' ->
+            let
+                column = V.foldl' (\m v -> MS.insertWith (+) v (1 :: Int) m) M.empty column'
+             in
+                M.toAscList column
 
 {- | O (k * n) Shows the proportions of each value in a given column.
 
@@ -706,16 +704,18 @@ valueCounts expr df = case columnAsVector expr df of
 -}
 valueProportions ::
     forall a. (Ord a, Columnable a) => Expr a -> DataFrame -> [(a, Double)]
-valueProportions expr df = case columnAsVector expr df of
-    Left e -> throw e
-    Right column' ->
-        let
-            counts =
-                M.toAscList
-                    (V.foldl' (\m v -> MS.insertWith (+) v (1 :: Int) m) M.empty column')
-            total = fromIntegral (sum (map snd counts))
-         in
-            map (fmap ((/ total) . fromIntegral)) counts
+valueProportions expr df
+    | null df = throw (EmptyDataSetException "valueCounts")
+    | otherwise = case columnAsVector expr df of
+        Left e -> throw e
+        Right column' ->
+            let
+                counts =
+                    M.toAscList
+                        (V.foldl' (\m v -> MS.insertWith (+) v (1 :: Int) m) M.empty column')
+                total = fromIntegral (sum (map snd counts))
+             in
+                map (fmap ((/ total) . fromIntegral)) counts
 
 {- | A left fold for dataframes that takes the dataframe as the last object.
 This makes it easier to chain operations.
@@ -853,13 +853,16 @@ Right ["Alice", "Bob", "Charlie", ...]
 columnAsVector ::
     forall a.
     (Columnable a) => Expr a -> DataFrame -> Either DataFrameException (V.Vector a)
-columnAsVector (Col name) df = case getColumn name df of
-    Just col -> toVector col
-    Nothing ->
-        Left $ ColumnNotFoundException name "columnAsVector" (M.keys $ columnIndices df)
-columnAsVector expr df = case interpret df expr of
-    Left e -> throw e
-    Right (TColumn col) -> toVector col
+columnAsVector expr df
+    | null df = throw (EmptyDataSetException "columnAsVector")
+    | otherwise = case expr of
+        (Col name) -> case getColumn name df of
+            Just col -> toVector col
+            Nothing ->
+                Left $ ColumnNotFoundException name "columnAsVector" (M.keys $ columnIndices df)
+        _ -> case interpret df expr of
+            Left e -> throw e
+            Right (TColumn col) -> toVector col
 
 {- | Retrieves a column as an unboxed vector of 'Int' values.
 
@@ -952,6 +955,8 @@ columnAsList expr df = either throw V.toList (columnAsVector expr df)
 @(name, expression)@ pairs. Derived columns show their expression;
 raw columns show an identity @col \@type name@ expression.
 -}
+
+-- TODO: mchavinda - Expand out these expressions if possible.
 showDerivedExpressions :: DataFrame -> [NamedExpr]
 showDerivedExpressions df =
     let exprs = derivingExpressions df
