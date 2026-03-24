@@ -33,7 +33,6 @@ Think of these like compiler flags in C++ or decorator syntax in Python:
 Now we import the libraries we need. This is similar to `import` statements
 in Python or `#include` in C++:
 
-> import GHC.Generics (Generic)
 >
 > import Control.Exception (throw)
 > import Control.Monad (when, zipWithM_)
