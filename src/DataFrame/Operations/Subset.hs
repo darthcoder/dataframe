@@ -44,6 +44,7 @@ import DataFrame.Internal.Interpreter
 import DataFrame.Operations.Core
 import DataFrame.Operations.Merge ()
 import DataFrame.Operations.Transformations (apply)
+import DataFrame.Operators
 import System.Random
 import Type.Reflection
 import Prelude hiding (filter, take)
@@ -345,23 +346,12 @@ sample :: (RandomGen g) => g -> Double -> DataFrame -> DataFrame
 sample pureGen p df =
     let
         rand = generateRandomVector pureGen (fst (dataframeDimensions df))
+        cRand = col @Double "__rand__"
      in
         df
-            & insertUnboxedVector "__rand__" rand
-            & filterWhere
-                ( Binary
-                    ( MkBinaryOp
-                        { binaryFn = (>=)
-                        , binaryName = "geq"
-                        , binarySymbol = Just ">="
-                        , binaryCommutative = False
-                        , binaryPrecedence = 1
-                        }
-                    )
-                    (Col @Double "__rand__")
-                    (Lit (1 - p))
-                )
-            & exclude ["__rand__"]
+            & insertUnboxedVector (name cRand) rand
+            & filterWhere (cRand .>=. Lit (1 - p))
+            & exclude [name cRand]
 
 {- | Split a dataset into two. The first in the tuple gets a sample of p (0 <= p <= 1) and the second gets (1 - p). This is useful for creating test and train splits.
 
@@ -377,38 +367,16 @@ randomSplit ::
 randomSplit pureGen p df =
     let
         rand = generateRandomVector pureGen (fst (dataframeDimensions df))
-        withRand = df & insertUnboxedVector "__rand__" rand
+        cRand = col @Double "__rand__"
+        withRand = df & insertUnboxedVector (name cRand) rand
      in
         ( withRand
-            & filterWhere
-                ( Binary
-                    ( MkBinaryOp
-                        { binaryFn = (<=)
-                        , binaryName = "leq"
-                        , binarySymbol = Just "<="
-                        , binaryCommutative = False
-                        , binaryPrecedence = 1
-                        }
-                    )
-                    (Col @Double "__rand__")
-                    (Lit p)
-                )
-            & exclude ["__rand__"]
+            & filterWhere (cRand .<=. Lit p)
+            & exclude [name cRand]
         , withRand
             & filterWhere
-                ( Binary
-                    ( MkBinaryOp
-                        { binaryFn = (>)
-                        , binaryName = "gt"
-                        , binarySymbol = Just ">"
-                        , binaryCommutative = False
-                        , binaryPrecedence = 1
-                        }
-                    )
-                    (Col @Double "__rand__")
-                    (Lit p)
-                )
-            & exclude ["__rand__"]
+                (cRand .>. Lit p)
+            & exclude [name cRand]
         )
 
 {- | Creates n folds of a dataframe.
@@ -424,46 +392,20 @@ kFolds :: (RandomGen g) => g -> Int -> DataFrame -> [DataFrame]
 kFolds pureGen folds df =
     let
         rand = generateRandomVector pureGen (fst (dataframeDimensions df))
-        withRand = df & insertUnboxedVector "__rand__" rand
+        cRand = col @Double "__rand__"
+        withRand = df & insertUnboxedVector (name cRand) rand
         partitionSize = 1 / fromIntegral folds
         singleFold n d =
-            d
-                & filterWhere
-                    ( Binary
-                        ( MkBinaryOp
-                            { binaryFn = (>=)
-                            , binaryName = "geq"
-                            , binarySymbol = Just ">="
-                            , binaryCommutative = False
-                            , binaryPrecedence = 1
-                            }
-                        )
-                        (Col @Double "__rand__")
-                        (Lit (fromIntegral n * partitionSize))
-                    )
+            d & filterWhere (cRand .>=. Lit (fromIntegral n * partitionSize))
         go (-1) _ = []
         go n d =
             let
                 d' = singleFold n d
-                d'' =
-                    d
-                        & filterWhere
-                            ( Binary
-                                ( MkBinaryOp
-                                    { binaryFn = (<)
-                                    , binaryName = "lt"
-                                    , binarySymbol = Just "<"
-                                    , binaryCommutative = False
-                                    , binaryPrecedence = 1
-                                    }
-                                )
-                                (Col @Double "__rand__")
-                                (Lit (fromIntegral n * partitionSize))
-                            )
+                d'' = d & filterWhere (cRand .<. Lit (fromIntegral n * partitionSize))
              in
                 d' : go (n - 1) d''
      in
-        map (exclude ["__rand__"]) (go (folds - 1) withRand)
+        map (exclude [name cRand]) (go (folds - 1) withRand)
 
 generateRandomVector :: (RandomGen g) => g -> Int -> VU.Vector Double
 generateRandomVector pureGen k = VU.fromList $ go pureGen k
