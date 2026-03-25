@@ -27,7 +27,6 @@ jobs:
         run: |
           cat > cabal.project <<EOF
           packages:
-            .
             examples/
             dataframe-persistent/
             dataframe-hasktorch/
@@ -44,7 +43,9 @@ jobs:
           restore-keys: ${{ runner.os }}-ghc-${{ matrix.ghc }}-
 
       - name: Build all packages
-        run: cabal build all
+        run: |
+          ./examples/setup_torch.sh
+          cabal build all
 
       - name: Test all packages
         run: cabal test all
