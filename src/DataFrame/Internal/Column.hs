@@ -380,13 +380,13 @@ atIndicesStable indexes (BoxedColumn column) =
     BoxedColumn $
         VB.generate
             (VU.length indexes)
-            (\i -> column `VB.unsafeIndex` (indexes `VU.unsafeIndex` i))
+            ((column `VB.unsafeIndex`) . (indexes `VU.unsafeIndex`))
 atIndicesStable indexes (UnboxedColumn column) = UnboxedColumn $ VU.unsafeBackpermute column indexes
 atIndicesStable indexes (OptionalColumn column) =
     OptionalColumn $
         VB.generate
             (VU.length indexes)
-            (\i -> column `VB.unsafeIndex` (indexes `VU.unsafeIndex` i))
+            ((column `VB.unsafeIndex`) . (indexes `VU.unsafeIndex`))
 {-# INLINE atIndicesStable #-}
 
 {- | Like 'atIndicesStable' but treats negative indices as null,

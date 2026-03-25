@@ -213,7 +213,10 @@ input — the sort happens once, not per-group.
 sliceGroups :: Column -> VU.Vector Int -> VU.Vector Int -> V.Vector Column
 sliceGroups col os indices = case col of
     BoxedColumn vec ->
-        let !sorted = V.unsafeBackpermute vec (V.convert indices)
+        let !sorted =
+                V.generate
+                    (VU.length indices)
+                    ((vec `V.unsafeIndex`) . (indices `VU.unsafeIndex`))
          in V.generate nGroups $ \i ->
                 BoxedColumn (V.unsafeSlice (start i) (len i) sorted)
     UnboxedColumn vec ->
@@ -221,7 +224,10 @@ sliceGroups col os indices = case col of
          in V.generate nGroups $ \i ->
                 UnboxedColumn (VU.unsafeSlice (start i) (len i) sorted)
     OptionalColumn vec ->
-        let !sorted = V.unsafeBackpermute vec (V.convert indices)
+        let !sorted =
+                V.generate
+                    (VU.length indices)
+                    ((vec `V.unsafeIndex`) . (indices `VU.unsafeIndex`))
          in V.generate nGroups $ \i ->
                 OptionalColumn (V.unsafeSlice (start i) (len i) sorted)
   where
