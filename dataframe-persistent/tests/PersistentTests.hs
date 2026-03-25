@@ -36,7 +36,7 @@ import System.IO.Temp (withSystemTempFile)
 import Test.HUnit
 import UnliftIO.Resource (ResourceT)
 
-import DataFrame.Functions ((.<))
+import DataFrame.Functions ((.<.))
 
 -- Define test entities
 share
