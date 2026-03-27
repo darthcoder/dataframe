@@ -15,7 +15,7 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Proxy as P
 import Data.Time
 import Data.Type.Equality (TestEquality (..))
-import DataFrame.Internal.Column (Column (..), fromVector)
+import DataFrame.Internal.Column (Column (..), ensureOptional, fromVector)
 import DataFrame.Internal.DataFrame (DataFrame (..), unsafeGetColumn)
 import DataFrame.Internal.Parsing
 import DataFrame.Internal.Schema
@@ -78,14 +78,16 @@ parseFromExamples opts cols =
         examples = V.map converter (V.take (sampleSize opts) cols)
         asMaybeText = V.map converter cols
         dfmt = parseDateFormat opts
+        result =
+            case makeParsingAssumption dfmt examples of
+                BoolAssumption -> handleBoolAssumption asMaybeText
+                IntAssumption -> handleIntAssumption asMaybeText
+                DoubleAssumption -> handleDoubleAssumption asMaybeText
+                TextAssumption -> handleTextAssumption asMaybeText
+                DateAssumption -> handleDateAssumption dfmt asMaybeText
+                NoAssumption -> handleNoAssumption dfmt asMaybeText
      in
-        case makeParsingAssumption dfmt examples of
-            BoolAssumption -> handleBoolAssumption asMaybeText
-            IntAssumption -> handleIntAssumption asMaybeText
-            DoubleAssumption -> handleDoubleAssumption asMaybeText
-            TextAssumption -> handleTextAssumption asMaybeText
-            DateAssumption -> handleDateAssumption dfmt asMaybeText
-            NoAssumption -> handleNoAssumption dfmt asMaybeText
+        if parseSafe opts then ensureOptional result else result
 
 handleBoolAssumption :: V.Vector (Maybe T.Text) -> Column
 handleBoolAssumption asMaybeText

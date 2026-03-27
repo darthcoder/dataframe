@@ -19,10 +19,11 @@ import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Time
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import qualified Data.Vector as V
 import DataFrame.Errors (DataFrameException (ColumnsNotFoundException))
 import DataFrame.Internal.Binary (littleEndianWord32)
 import qualified DataFrame.Internal.Column as DI
-import DataFrame.Internal.DataFrame (DataFrame)
+import DataFrame.Internal.DataFrame (DataFrame, columns)
 import DataFrame.Internal.Expression (Expr, getColumns)
 import qualified DataFrame.Operations.Core as DI
 import DataFrame.Operations.Merge ()
@@ -75,6 +76,8 @@ data ParquetReadOptions = ParquetReadOptions
     -- ^ Optional row filter expression applied before projection.
     , rowRange :: Maybe (Int, Int)
     -- ^ Optional row slice @(start, end)@ with start-inclusive/end-exclusive semantics.
+    , safeColumns :: Bool
+    -- ^ When True, every column is promoted to OptionalColumn after read, regardless of nullability in the schema.
     }
     deriving (Eq, Show)
 
@@ -87,6 +90,7 @@ ParquetReadOptions
     { selectedColumns = Nothing
     , predicate = Nothing
     , rowRange = Nothing
+    , safeColumns = False
     }
 @
 -}
@@ -96,6 +100,7 @@ defaultParquetReadOptions =
         { selectedColumns = Nothing
         , predicate = Nothing
         , rowRange = Nothing
+        , safeColumns = False
         }
 
 -- Public API --------------------------------------------------------------
@@ -349,9 +354,15 @@ applyPredicate :: ParquetReadOptions -> DataFrame -> DataFrame
 applyPredicate opts df =
     maybe df (`DS.filterWhere` df) (predicate opts)
 
+applySafeRead :: ParquetReadOptions -> DataFrame -> DataFrame
+applySafeRead opts df
+    | safeColumns opts = df{columns = V.map DI.ensureOptional (columns df)}
+    | otherwise = df
+
 applyReadOptions :: ParquetReadOptions -> DataFrame -> DataFrame
 applyReadOptions opts =
-    applyRowRange opts
+    applySafeRead opts
+        . applyRowRange opts
         . applySelectedColumns opts
         . applyPredicate opts
 

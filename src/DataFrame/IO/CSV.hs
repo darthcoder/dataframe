@@ -220,7 +220,7 @@ defaultReadOptions =
     ReadOptions
         { headerSpec = UseFirstRow
         , typeSpec = InferFromSample 100
-        , safeRead = True
+        , safeRead = False
         , dateFormat = "%Y-%m-%d"
         , columnSeparator = ','
         , numColumns = Nothing
@@ -408,11 +408,14 @@ freezeBuilderColumn (BuilderBS _ _) =
         "freezeBuilderColumn: BuilderBS must be finalized via finalizeBuilderColumn"
 
 finalizeBuilderColumn :: ReadOptions -> BuilderColumn -> IO Column
-finalizeBuilderColumn opts (BuilderBS gv validRef) = do
-    vec <- freezePagedVector gv
-    valid <- freezePagedUnboxedVector validRef
-    return $! inferColumnFromBS opts vec valid
-finalizeBuilderColumn _ bc = freezeBuilderColumn bc
+finalizeBuilderColumn opts bc = do
+    col <- case bc of
+        BuilderBS gv validRef -> do
+            vec <- freezePagedVector gv
+            valid <- freezePagedUnboxedVector validRef
+            return $! inferColumnFromBS opts vec valid
+        _ -> freezeBuilderColumn bc
+    return $! if safeRead opts then ensureOptional col else col
 
 inferColumnFromBS ::
     ReadOptions -> V.Vector BS.ByteString -> VU.Vector Word8 -> Column

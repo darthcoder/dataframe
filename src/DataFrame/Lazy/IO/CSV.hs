@@ -30,6 +30,7 @@ import DataFrame.Internal.Column (
     Column (..),
     MutableColumn (..),
     columnLength,
+    ensureOptional,
     freezeColumn',
     writeColumn,
  )
@@ -60,7 +61,7 @@ defaultOptions =
     ReadOptions
         { hasHeader = True
         , inferTypes = True
-        , safeRead = True
+        , safeRead = False
         , rowRange = Nothing
         , seekPos = Nothing
         , totalRows = Nothing
@@ -218,7 +219,8 @@ freezeColumn ::
     IO Column
 freezeColumn mutableCols nulls opts colIndex = do
     col <- VM.unsafeRead mutableCols colIndex
-    freezeColumn' (nulls V.! colIndex) col
+    frozen <- freezeColumn' (nulls V.! colIndex) col
+    return $! if safeRead opts then ensureOptional frozen else frozen
 {-# INLINE freezeColumn #-}
 
 -- ---------------------------------------------------------------------------

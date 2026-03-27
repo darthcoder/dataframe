@@ -20,6 +20,9 @@ extra-source-files: cbits/process_csv.h
                     cbits/arrow_abi.h
                     cbits/dataframe_arrow.h
                     cbits/rts_init.c
+                    tests/data/typing/texts.txt
+                    tests/data/typing/texts_with_empties.txt
+                    tests/data/typing/texts_with_empties_and_nullish.txt
                     data/titanic/*.csv
                     data/sharded/*.parquet
                     tests/data/*.csv
@@ -274,6 +277,7 @@ test-suite tests
                    Operations.Typing,
                    LazyParquet,
                    Parquet,
+                   ParquetTestData,
                    Properties,
                    Monad
     build-depends:  base >= 4 && < 5,

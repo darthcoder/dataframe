@@ -872,6 +872,12 @@ freezeColumn' nulls (MUnboxedColumn col)
                         )
 {-# INLINE freezeColumn' #-}
 
+-- | Promote a non-nullable column to OptionalColumn. No-op when already optional.
+ensureOptional :: Column -> Column
+ensureOptional (BoxedColumn col) = OptionalColumn (VB.map Just col)
+ensureOptional (UnboxedColumn col) = OptionalColumn (VB.generate (VU.length col) (Just . (col `VU.unsafeIndex`)))
+ensureOptional c = c
+
 -- | Fills the end of a column, up to n, with Nothing. Does nothing if column has length greater than n.
 expandColumn :: Int -> Column -> Column
 expandColumn n (OptionalColumn col) = OptionalColumn $ col <> VB.replicate (n - VG.length col) Nothing
@@ -1350,7 +1356,4 @@ toUnboxedVector column =
                         , errorColumnName = Nothing
                         }
                     )
-{-# SPECIALIZE toUnboxedVector ::
-    Column -> Either DataFrameException (VU.Vector Double)
-    #-}
 {-# INLINE toUnboxedVector #-}
