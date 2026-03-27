@@ -24,6 +24,7 @@ import DataFrame.Internal.Column (
     Column (..),
     Columnable,
     TypedColumn (..),
+    hasMissing,
     ifoldrColumn,
     imapColumn,
     mapColumn,
@@ -211,7 +212,7 @@ imputeCore (Col columnName) value df = case getColumn columnName df of
     Nothing ->
         throw $
             ColumnsNotFoundException [columnName] "impute" (M.keys $ columnIndices df)
-    Just (OptionalColumn _) -> case safeApply (fromMaybe value) columnName df of
+    Just col | hasMissing col -> case safeApply (fromMaybe value) columnName df of
         Left (TypeMismatchException context) -> throw $ TypeMismatchException (context{callingFunctionName = Just "impute"})
         Left exception -> throw exception
         Right res -> res

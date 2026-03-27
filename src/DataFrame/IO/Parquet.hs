@@ -191,9 +191,8 @@ _readParquetWithOpts extraConfig opts path = withFileBufferedOrSeekable extraCon
                         )
                     )
 
-    let totalRows = sum (map (fromIntegral . rowGroupNumRows) (rowGroups fileMetadata)) :: Int
-    colMutMap <- newIORef (M.empty :: M.Map T.Text DI.MutableColumn)
-    colOffMap <- newIORef (M.empty :: M.Map T.Text Int)
+    -- Collect per-column chunk lists; concatenate at the end to preserve bitmaps.
+    colListMap <- newIORef (M.empty :: M.Map T.Text [DI.Column])
     lTypeMap <- newIORef (M.empty :: M.Map T.Text LogicalType)
 
     let schemaElements = schema fileMetadata
@@ -266,22 +265,13 @@ _readParquetWithOpts extraConfig opts path = withFileBufferedOrSeekable extraCon
                         maybeTypeLength
                         lType
 
-                mutMapSnap <- readIORef colMutMap
-                case M.lookup colFullName mutMapSnap of
-                    Nothing -> do
-                        mc <- DI.newMutableColumn totalRows column
-                        DI.copyIntoMutableColumn mc 0 column
-                        modifyIORef' colMutMap (M.insert colFullName mc)
-                        modifyIORef' colOffMap (M.insert colFullName (DI.columnLength column))
-                    Just mc -> do
-                        off <- (M.! colFullName) <$> readIORef colOffMap
-                        DI.copyIntoMutableColumn mc off column
-                        modifyIORef' colOffMap (M.adjust (+ DI.columnLength column) colFullName)
+                modifyIORef' colListMap (M.insertWith (++) colFullName [column])
                 modifyIORef' lTypeMap (M.insert colFullName lType)
 
-    finalMutMap <- readIORef colMutMap
-    finalColMap <-
-        M.traverseWithKey (\_ mc -> DI.freezeMutableColumn mc) finalMutMap
+    finalListMap <- readIORef colListMap
+    -- Reverse the accumulated lists (they were prepended) and concat columns per-name,
+    -- preserving bitmaps correctly via concatManyColumns.
+    let finalColMap = M.map (DI.concatManyColumns . reverse) finalListMap
     finalLTypeMap <- readIORef lTypeMap
     let orderedColumns =
             map

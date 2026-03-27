@@ -27,7 +27,7 @@ type Columnable' a = (Typeable a, Show a, Ord a, Eq a, Read a)
 data Rep
     = RBoxed
     | RUnboxed
-    | ROptional
+    | RNullableBoxed
 
 -- | Type-level if statement.
 type family If (cond :: Bool) (yes :: k) (no :: k) :: k where
@@ -68,9 +68,9 @@ type family Numeric (a :: Type) :: Bool where
     Numeric Float = 'True
     Numeric _ = 'False
 
--- | Compute the column representation tag for any ‘a’.
+-- | Compute the column representation tag for any 'a'.
 type family KindOf a :: Rep where
-    KindOf (Maybe a) = 'ROptional
+    KindOf (Maybe a) = 'RNullableBoxed
     KindOf a = If (Unboxable a) 'RUnboxed 'RBoxed
 
 -- | Type-level boolean for constraint/type comparison.

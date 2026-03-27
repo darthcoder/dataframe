@@ -1057,23 +1057,28 @@ assembleFullOuter csSet left right leftIxs rightIxs =
         insertIfPresent _ Nothing df = df
         insertIfPresent name (Just c) df = D.insertColumn name c df
 
-        -- Coalesce two OptionalColumns: take first non-Nothing per row,
+        -- Coalesce two nullable columns: take first non-Nothing per row,
         -- producing a non-optional column.
         coalesceKeyColumn :: Column -> Column -> Column
         coalesceKeyColumn
-            (OptionalColumn (lCol :: VB.Vector (Maybe a)))
-            (OptionalColumn (rCol :: VB.Vector (Maybe b))) =
+            (BoxedColumn lBm (lCol :: VB.Vector a))
+            (BoxedColumn rBm (rCol :: VB.Vector b)) =
                 case testEquality (typeRep @a) (typeRep @b) of
                     Just Refl ->
-                        D.fromVector $
-                            VB.zipWith
-                                ( \l r ->
-                                    fromMaybe (error "fullOuterJoin: null on both sides of key column") (l <|> r)
-                                )
-                                lCol
-                                rCol
+                        let asMaybe bm col = VB.imap (\i v -> case bm of
+                                Just bm' -> if bitmapTestBit bm' i then Just v else Nothing
+                                Nothing   -> Just v) col
+                            lMaybe = asMaybe lBm lCol
+                            rMaybe = asMaybe rBm rCol
+                         in D.fromVector $
+                                VB.zipWith
+                                    ( \l r ->
+                                        fromMaybe (error "fullOuterJoin: null on both sides of key column") (l <|> r)
+                                    )
+                                    lMaybe
+                                    rMaybe
                     Nothing -> error "Cannot join columns of different types"
-        coalesceKeyColumn _ _ = error "fullOuterJoin: expected OptionalColumn for key columns"
+        coalesceKeyColumn _ _ = error "fullOuterJoin: expected nullable column for key columns"
      in D.fold
             ( \name df ->
                 if S.member name csSet

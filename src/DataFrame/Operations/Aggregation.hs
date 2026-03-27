@@ -30,6 +30,7 @@ import DataFrame.Internal.Column (
     Column (..),
     TypedColumn (..),
     atIndicesStable,
+    bitmapTestBit,
  )
 import DataFrame.Internal.DataFrame (DataFrame (..), GroupedDataFrame (..))
 import DataFrame.Internal.Expression
@@ -81,7 +82,7 @@ groupBy names df
         let selectedCols = map (columns df V.!) indicesToGroup
 
         forM_ selectedCols $ \case
-            UnboxedColumn (v :: VU.Vector a) ->
+            UnboxedColumn _ (v :: VU.Vector a) ->
                 case testEquality (typeRep @a) (typeRep @Int) of
                     Just Refl ->
                         VU.imapM_
@@ -129,31 +130,28 @@ groupBy names df
                                                         VUM.unsafeWrite mv i (i, hashWithSalt h x)
                                                     )
                                                     v
-            BoxedColumn (v :: V.Vector a) ->
+            BoxedColumn bm (v :: V.Vector a) ->
                 case testEquality (typeRep @a) (typeRep @T.Text) of
                     Just Refl ->
                         V.imapM_
                             ( \i t -> do
                                 (_, !h) <- VUM.unsafeRead mv i
-                                VUM.unsafeWrite mv i (i, hashWithSalt h t)
+                                let h' = case bm of
+                                        Just bm' | not (bitmapTestBit bm' i) -> hashWithSalt h (0 :: Int) -- null sentinel
+                                        _ -> hashWithSalt h t
+                                VUM.unsafeWrite mv i (i, h')
                             )
                             v
                     Nothing ->
                         V.imapM_
                             ( \i d -> do
-                                let x = hash (show d)
                                 (_, !h) <- VUM.unsafeRead mv i
-                                VUM.unsafeWrite mv i (i, hashWithSalt h x)
+                                let h' = case bm of
+                                        Just bm' | not (bitmapTestBit bm' i) -> hashWithSalt h (0 :: Int) -- null sentinel
+                                        _ -> hashWithSalt h (hash (show d))
+                                VUM.unsafeWrite mv i (i, h')
                             )
                             v
-            OptionalColumn v ->
-                V.imapM_
-                    ( \i d -> do
-                        let x = hash (show d)
-                        (_, !h) <- VUM.unsafeRead mv i
-                        VUM.unsafeWrite mv i (i, hashWithSalt h x)
-                    )
-                    v
 
         let numPasses = 4
             bucketSize = 65536
@@ -197,7 +195,7 @@ computeRowHashes indices df = runST $ do
     let selectedCols = map (columns df V.!) indices
 
     forM_ selectedCols $ \case
-        UnboxedColumn (v :: VU.Vector a) ->
+        UnboxedColumn _ (v :: VU.Vector a) ->
             case testEquality (typeRep @a) (typeRep @Int) of
                 Just Refl ->
                     VU.imapM_
@@ -245,31 +243,28 @@ computeRowHashes indices df = runST $ do
                                                     VUM.unsafeWrite mv i (hashWithSalt h x)
                                                 )
                                                 v
-        BoxedColumn (v :: V.Vector a) ->
+        BoxedColumn bm (v :: V.Vector a) ->
             case testEquality (typeRep @a) (typeRep @T.Text) of
                 Just Refl ->
                     V.imapM_
                         ( \i (t :: T.Text) -> do
                             h <- VUM.unsafeRead mv i
-                            VUM.unsafeWrite mv i (hashWithSalt h t)
+                            let h' = case bm of
+                                    Just bm' | not (bitmapTestBit bm' i) -> hashWithSalt h (0 :: Int)
+                                    _ -> hashWithSalt h t
+                            VUM.unsafeWrite mv i h'
                         )
                         v
                 Nothing ->
                     V.imapM_
                         ( \i d -> do
-                            let x = hash (show d)
+                            let x = case bm of
+                                    Just bm' | not (bitmapTestBit bm' i) -> 0 :: Int
+                                    _ -> hash (show d)
                             h <- VUM.unsafeRead mv i
                             VUM.unsafeWrite mv i (hashWithSalt h x)
                         )
                         v
-        OptionalColumn v ->
-            V.imapM_
-                ( \i d -> do
-                    let x = hash (show d)
-                    h <- VUM.unsafeRead mv i
-                    VUM.unsafeWrite mv i (hashWithSalt h x)
-                )
-                v
 
     VU.unsafeFreeze mv
   where

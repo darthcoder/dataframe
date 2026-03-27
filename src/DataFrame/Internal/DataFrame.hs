@@ -110,19 +110,17 @@ asText d properMarkdown =
     let header = map fst (sortBy (compare `on` snd) $ M.toList (columnIndices d))
         types = V.toList $ V.filter (/= "") $ V.map getType (columns d)
         getType :: Column -> T.Text
-        getType (BoxedColumn (column :: V.Vector a)) = T.pack $ show (typeRep @a)
-        getType (UnboxedColumn (column :: VU.Vector a)) = T.pack $ show (typeRep @a)
-        getType (OptionalColumn (column :: V.Vector a)) = T.pack $ show (typeRep @a)
+        getType (BoxedColumn _ (column :: V.Vector a)) = T.pack $ show (typeRep @a)
+        getType (UnboxedColumn _ (column :: VU.Vector a)) = T.pack $ show (typeRep @a)
         -- Separate out cases dynamically so we don't end up making round trip string
         -- copies.
         get :: Maybe Column -> V.Vector T.Text
-        get (Just (BoxedColumn (column :: V.Vector a))) = case testEquality (typeRep @a) (typeRep @T.Text) of
+        get (Just (BoxedColumn _ (column :: V.Vector a))) = case testEquality (typeRep @a) (typeRep @T.Text) of
             Just Refl -> column
             Nothing -> case testEquality (typeRep @a) (typeRep @String) of
                 Just Refl -> V.map T.pack column
                 Nothing -> V.map (T.pack . show) column
-        get (Just (UnboxedColumn column)) = V.map (T.pack . show) (V.convert column)
-        get (Just (OptionalColumn column)) = V.map (T.pack . show) column
+        get (Just (UnboxedColumn _ column)) = V.map (T.pack . show) (V.convert column)
         get Nothing = V.empty
         getTextColumnFromFrame df (i, name) = get $ (V.!?) (columns d) ((M.!) (columnIndices d) name)
         rows =

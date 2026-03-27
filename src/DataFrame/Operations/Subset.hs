@@ -132,9 +132,32 @@ filter (Col filterColumnName) condition df = case getColumn filterColumnName df 
     Nothing ->
         throw $
             ColumnsNotFoundException [filterColumnName] "filter" (M.keys $ columnIndices df)
-    Just (BoxedColumn (column :: V.Vector b)) -> filterByVector filterColumnName column condition df
-    Just (OptionalColumn (column :: V.Vector b)) -> filterByVector filterColumnName column condition df
-    Just (UnboxedColumn (column :: VU.Vector b)) -> filterByVector filterColumnName column condition df
+    Just col@(BoxedColumn bm (column :: V.Vector b)) ->
+        -- Check direct type match first, then try Maybe b match for nullable columns
+        case testEquality (typeRep @a) (typeRep @b) of
+            Just Refl -> filterByVector filterColumnName column condition df
+            Nothing -> case (bm, typeRep @a) of
+                (Just bm', App tMaybe tInner) -> case eqTypeRep tMaybe (typeRep @Maybe) of
+                    Just HRefl -> case testEquality tInner (typeRep @b) of
+                        Just Refl ->
+                            let maybeVec = V.imap (\i v -> if bitmapTestBit bm' i then Just v else Nothing) column
+                             in filterByVector filterColumnName maybeVec condition df
+                        Nothing -> filterByVector filterColumnName column condition df
+                    Nothing -> filterByVector filterColumnName column condition df
+                _ -> filterByVector filterColumnName column condition df
+    Just col@(UnboxedColumn bm (column :: VU.Vector b)) ->
+        case testEquality (typeRep @a) (typeRep @b) of
+            Just Refl -> filterByVector filterColumnName column condition df
+            Nothing -> case (bm, typeRep @a) of
+                (Just bm', App tMaybe tInner) -> case eqTypeRep tMaybe (typeRep @Maybe) of
+                    Just HRefl -> case testEquality tInner (typeRep @b) of
+                        Just Refl ->
+                            let maybeVec = V.generate (VU.length column) $ \i ->
+                                    if bitmapTestBit bm' i then Just (VU.unsafeIndex column i) else Nothing
+                             in filterByVector filterColumnName maybeVec condition df
+                        Nothing -> filterByVector filterColumnName column condition df
+                    Nothing -> filterByVector filterColumnName column condition df
+                _ -> filterByVector filterColumnName column condition df
 filter expr condition df =
     let
         (TColumn col) = case interpret @a df (normalize expr) of
@@ -209,8 +232,11 @@ filterJust :: T.Text -> DataFrame -> DataFrame
 filterJust name df = case getColumn name df of
     Nothing ->
         throw $ ColumnsNotFoundException [name] "filterJust" (M.keys $ columnIndices df)
-    Just column@(OptionalColumn (col :: V.Vector (Maybe a))) -> filter (Col @(Maybe a) name) isJust df & apply @(Maybe a) fromJust name
-    Just column -> df
+    Just column | hasMissing column -> case column of
+        BoxedColumn (Just _) (col :: V.Vector a) -> filter (Col @(Maybe a) name) isJust df & apply @(Maybe a) fromJust name
+        UnboxedColumn (Just _) (col :: VU.Vector a) -> filter (Col @(Maybe a) name) isJust df & apply @(Maybe a) fromJust name
+        _ -> df
+    Just _ -> df
 
 {- | O(k) returns all rows with `Nothing` in a give column.
 
@@ -221,7 +247,10 @@ filterNothing name df = case getColumn name df of
     Nothing ->
         throw $
             ColumnsNotFoundException [name] "filterNothing" (M.keys $ columnIndices df)
-    Just (OptionalColumn (col :: V.Vector (Maybe a))) -> filter (Col @(Maybe a) name) isNothing df
+    Just column | hasMissing column -> case column of
+        BoxedColumn (Just _) (col :: V.Vector a) -> filter (Col @(Maybe a) name) isNothing df
+        UnboxedColumn (Just _) (col :: VU.Vector a) -> filter (Col @(Maybe a) name) isNothing df
+        _ -> df
     _ -> df
 
 {- | O(n * k) removes all rows with `Nothing` from the dataframe.
@@ -434,12 +463,19 @@ generateRandomVector pureGen k = VU.fromList $ go pureGen k
 
 -- | Convert any Column to a vector of Text labels (one per row).
 columnToTextVec :: Column -> V.Vector T.Text
-columnToTextVec (BoxedColumn (col :: V.Vector a)) =
-    case testEquality (typeRep @a) (typeRep @T.Text) of
-        Just Refl -> col
-        Nothing -> V.map (T.pack . show) col
-columnToTextVec (UnboxedColumn col) = V.map (T.pack . show) (V.convert col)
-columnToTextVec (OptionalColumn col) = V.map (T.pack . show) col
+columnToTextVec (BoxedColumn bm (col :: V.Vector a)) =
+    case bm of
+        Nothing -> case testEquality (typeRep @a) (typeRep @T.Text) of
+            Just Refl -> col
+            Nothing -> V.map (T.pack . show) col
+        Just bitmap ->
+            V.imap (\i x -> if bitmapTestBit bitmap i then T.pack (show x) else "null") col
+columnToTextVec (UnboxedColumn bm col) =
+    case bm of
+        Nothing -> V.map (T.pack . show) (V.convert col)
+        Just bitmap ->
+            V.generate (VU.length col) $ \i ->
+                if bitmapTestBit bitmap i then T.pack (show (col VU.! i)) else "null"
 
 -- | Build a map from stringified label to row indices.
 groupByIndices :: Column -> M.Map T.Text (VU.Vector Int)

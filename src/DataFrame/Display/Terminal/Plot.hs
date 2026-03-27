@@ -339,14 +339,11 @@ getCategoricalCounts colName df =
         Just idx ->
             let col = columns df V.! idx
              in case col of
-                    BoxedColumn vec ->
+                    BoxedColumn _ vec ->
                         let counts = countValues vec
                          in Just [(T.pack (show k), fromIntegral v) | (k, v) <- counts]
-                    UnboxedColumn vec ->
+                    UnboxedColumn _ vec ->
                         let counts = countValuesUnboxed vec
-                         in Just [(T.pack (show k), fromIntegral v) | (k, v) <- counts]
-                    OptionalColumn vec ->
-                        let counts = countValues vec
                          in Just [(T.pack (show k), fromIntegral v) | (k, v) <- counts]
   where
     countValues :: (Ord a, Show a) => V.Vector a -> [(a, Int)]
@@ -365,9 +362,9 @@ extractStringColumn colName df =
         Just idx ->
             let col = columns df V.! idx
              in case col of
-                    BoxedColumn vec -> V.toList $ V.map (T.pack . show) vec
-                    UnboxedColumn vec -> V.toList $ VG.map (T.pack . show) (VG.convert vec)
-                    OptionalColumn vec -> V.toList $ V.map (T.pack . show) vec
+                    BoxedColumn _ vec -> V.toList $ V.map (T.pack . show) vec
+                    UnboxedColumn _ vec -> V.toList $ VG.map (T.pack . show) (VG.convert vec)
+                    _ -> []
 
 extractNumericColumn :: (HasCallStack) => T.Text -> DataFrame -> [Double]
 extractNumericColumn colName df =
@@ -376,8 +373,8 @@ extractNumericColumn colName df =
         Just idx ->
             let col = columns df V.! idx
              in case col of
-                    BoxedColumn vec -> vectorToDoubles vec
-                    UnboxedColumn vec -> unboxedVectorToDoubles vec
+                    BoxedColumn _ vec -> vectorToDoubles vec
+                    UnboxedColumn _ vec -> unboxedVectorToDoubles vec
                     _ -> []
 
 vectorToDoubles :: forall a. (Columnable a, Show a) => V.Vector a -> [Double]

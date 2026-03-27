@@ -389,19 +389,19 @@ freezeBuilderColumn (BuilderInt gv validRef) = do
     vec <- freezePagedUnboxedVector gv
     valid <- freezePagedUnboxedVector validRef
     if VU.all (== 1) valid
-        then return $! UnboxedColumn vec
+        then return $! UnboxedColumn Nothing vec
         else constructOptional vec valid
 freezeBuilderColumn (BuilderDouble gv validRef) = do
     vec <- freezePagedUnboxedVector gv
     valid <- freezePagedUnboxedVector validRef
     if VU.all (== 1) valid
-        then return $! UnboxedColumn vec
+        then return $! UnboxedColumn Nothing vec
         else constructOptional vec valid
 freezeBuilderColumn (BuilderText gv validRef) = do
     vec <- freezePagedVector gv
     valid <- freezePagedUnboxedVector validRef
     if VU.all (== 1) valid
-        then return $! BoxedColumn vec
+        then return $! BoxedColumn Nothing vec
         else constructOptionalBoxed vec valid
 freezeBuilderColumn (BuilderBS _ _) =
     error
@@ -526,23 +526,13 @@ handleBSNo dfmt asMaybe
 constructOptional ::
     (VU.Unbox a, Columnable a) => VU.Vector a -> VU.Vector Word8 -> IO Column
 constructOptional vec valid = do
-    let size = VU.length vec
-    mvec <- VM.new size
-    forM_ [0 .. size - 1] $ \i ->
-        if (valid VU.! i) == 0
-            then VM.write mvec i Nothing
-            else VM.write mvec i (Just (vec VU.! i))
-    OptionalColumn <$> V.freeze mvec
+    let bm = buildBitmapFromValid valid
+    pure $ UnboxedColumn (Just bm) vec
 
 constructOptionalBoxed :: V.Vector T.Text -> VU.Vector Word8 -> IO Column
 constructOptionalBoxed vec valid = do
-    let size = V.length vec
-    mvec <- VM.new size
-    forM_ [0 .. size - 1] $ \i ->
-        if (valid VU.! i) == 0
-            then VM.write mvec i Nothing
-            else VM.write mvec i (Just (vec V.! i))
-    OptionalColumn <$> V.freeze mvec
+    let bm = buildBitmapFromValid valid
+    pure $ BoxedColumn (Just bm) vec
 
 writeCsv :: FilePath -> DataFrame -> IO ()
 writeCsv = writeSeparated ','
@@ -569,7 +559,7 @@ getRowAsText :: DataFrame -> Int -> [T.Text]
 getRowAsText df i = V.ifoldr go [] (columns df)
   where
     indexMap = M.fromList (map (\(a, b) -> (b, a)) $ M.toList (columnIndices df))
-    go k (BoxedColumn (c :: V.Vector a)) acc = case c V.!? i of
+    go k (BoxedColumn _ (c :: V.Vector a)) acc = case c V.!? i of
         Just e -> textRep : acc
           where
             textRep = case testEquality (typeRep @a) (typeRep @T.Text) of
@@ -592,19 +582,8 @@ getRowAsText df i = V.ifoldr go [] (columns df)
                     ++ " has less items than "
                     ++ "the other columns at index "
                     ++ show i
-    go k (UnboxedColumn c) acc = case c VU.!? i of
+    go k (UnboxedColumn _ c) acc = case c VU.!? i of
         Just e -> T.pack (show e) : acc
-        Nothing ->
-            error $
-                "Column "
-                    ++ T.unpack (indexMap M.! k)
-                    ++ " has less items than "
-                    ++ "the other columns at index "
-                    ++ show i
-    go k (OptionalColumn (c :: V.Vector (Maybe a))) acc = case c V.!? i of
-        Just e -> case testEquality (typeRep @a) (typeRep @T.Text) of
-            Just Refl -> fromMaybe T.empty e : acc
-            Nothing -> maybe T.empty (T.pack . show) e : acc
         Nothing ->
             error $
                 "Column "

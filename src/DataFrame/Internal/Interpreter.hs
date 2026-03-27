@@ -212,24 +212,17 @@ input — the sort happens once, not per-group.
 -}
 sliceGroups :: Column -> VU.Vector Int -> VU.Vector Int -> V.Vector Column
 sliceGroups col os indices = case col of
-    BoxedColumn vec ->
+    BoxedColumn bm vec ->
         let !sorted =
                 V.generate
                     (VU.length indices)
                     ((vec `V.unsafeIndex`) . (indices `VU.unsafeIndex`))
          in V.generate nGroups $ \i ->
-                BoxedColumn (V.unsafeSlice (start i) (len i) sorted)
-    UnboxedColumn vec ->
+                BoxedColumn (fmap (\b -> bitmapSlice (start i) (len i) b) bm) (V.unsafeSlice (start i) (len i) sorted)
+    UnboxedColumn bm vec ->
         let !sorted = VU.unsafeBackpermute vec indices
          in V.generate nGroups $ \i ->
-                UnboxedColumn (VU.unsafeSlice (start i) (len i) sorted)
-    OptionalColumn vec ->
-        let !sorted =
-                V.generate
-                    (VU.length indices)
-                    ((vec `V.unsafeIndex`) . (indices `VU.unsafeIndex`))
-         in V.generate nGroups $ \i ->
-                OptionalColumn (V.unsafeSlice (start i) (len i) sorted)
+                UnboxedColumn (fmap (\b -> bitmapSlice (start i) (len i) b) bm) (VU.unsafeSlice (start i) (len i) sorted)
   where
     !nGroups = VU.length os - 1
     start i = os `VU.unsafeIndex` i
@@ -278,7 +271,7 @@ promoteToDoubleWith ::
     (Columnable b) =>
     (Either String Double -> b) -> Column -> Either DataFrameException Column
 promoteToDoubleWith onResult col = case col of
-    UnboxedColumn (v :: VU.Vector c) ->
+    UnboxedColumn Nothing (v :: VU.Vector c) ->
         case sFloating @c of
             STrue ->
                 Right $
@@ -290,35 +283,34 @@ promoteToDoubleWith onResult col = case col of
                         fromVector @b
                             (V.map (onResult . Right . (fromIntegral :: c -> Double)) (VG.convert v))
                 SFalse -> castMismatch @c @b
-    OptionalColumn (v :: V.Vector (Maybe c)) ->
+    UnboxedColumn (Just bm) (v :: VU.Vector c) ->
         case sFloating @c of
             STrue ->
                 Right $
                     fromVector @b
-                        ( V.map
-                            (maybe (onResult (Left "null")) (onResult . Right . (realToFrac :: c -> Double)))
-                            v
+                        ( V.generate (VU.length v) $ \i ->
+                            if bitmapTestBit bm i
+                                then onResult (Right (realToFrac (VU.unsafeIndex v i) :: Double))
+                                else onResult (Left "null")
                         )
             SFalse -> case sIntegral @c of
                 STrue ->
                     Right $
                         fromVector @b
-                            ( V.map
-                                ( maybe
-                                    (onResult (Left "null"))
-                                    (onResult . Right . (fromIntegral :: c -> Double))
-                                )
-                                v
+                            ( V.generate (VU.length v) $ \i ->
+                                if bitmapTestBit bm i
+                                    then onResult (Right (fromIntegral (VU.unsafeIndex v i) :: Double))
+                                    else onResult (Left "null")
                             )
-                SFalse -> tryParseWith @Double onResult col
-    BoxedColumn _ -> tryParseWith @Double onResult col
+                SFalse -> castMismatch @c @b
+    BoxedColumn _ _ -> tryParseWith @Double onResult col
 
 promoteToFloatWith ::
     forall b.
     (Columnable b) =>
     (Either String Float -> b) -> Column -> Either DataFrameException Column
 promoteToFloatWith onResult col = case col of
-    UnboxedColumn (v :: VU.Vector c) ->
+    UnboxedColumn Nothing (v :: VU.Vector c) ->
         case sFloating @c of
             STrue ->
                 Right $
@@ -330,32 +322,34 @@ promoteToFloatWith onResult col = case col of
                         fromVector @b
                             (V.map (onResult . Right . (fromIntegral :: c -> Float)) (VG.convert v))
                 SFalse -> castMismatch @c @b
-    OptionalColumn (v :: V.Vector (Maybe c)) ->
+    UnboxedColumn (Just bm) (v :: VU.Vector c) ->
         case sFloating @c of
             STrue ->
                 Right $
                     fromVector @b
-                        ( V.map
-                            (maybe (onResult (Left "null")) (onResult . Right . (realToFrac :: c -> Float)))
-                            v
+                        ( V.generate (VU.length v) $ \i ->
+                            if bitmapTestBit bm i
+                                then onResult (Right (realToFrac (VU.unsafeIndex v i) :: Float))
+                                else onResult (Left "null")
                         )
             SFalse -> case sIntegral @c of
                 STrue ->
                     Right $
                         fromVector @b
-                            ( V.map
-                                (maybe (onResult (Left "null")) (onResult . Right . (fromIntegral :: c -> Float)))
-                                v
+                            ( V.generate (VU.length v) $ \i ->
+                                if bitmapTestBit bm i
+                                    then onResult (Right (fromIntegral (VU.unsafeIndex v i) :: Float))
+                                    else onResult (Left "null")
                             )
-                SFalse -> tryParseWith @Float onResult col
-    BoxedColumn _ -> tryParseWith @Float onResult col
+                SFalse -> castMismatch @c @b
+    BoxedColumn _ _ -> tryParseWith @Float onResult col
 
 promoteToIntWith ::
     forall b.
     (Columnable b) =>
     (Either String Int -> b) -> Column -> Either DataFrameException Column
 promoteToIntWith onResult col = case col of
-    UnboxedColumn (v :: VU.Vector c) ->
+    UnboxedColumn Nothing (v :: VU.Vector c) ->
         case sFloating @c of
             STrue ->
                 Right $
@@ -367,28 +361,27 @@ promoteToIntWith onResult col = case col of
                         fromVector @b
                             (V.map (onResult . Right . (fromIntegral :: c -> Int)) (VG.convert v))
                 SFalse -> castMismatch @c @b
-    OptionalColumn (v :: V.Vector (Maybe c)) ->
+    UnboxedColumn (Just bm) (v :: VU.Vector c) ->
         case sFloating @c of
             STrue ->
                 Right $
                     fromVector @b
-                        ( V.map
-                            ( maybe
-                                (onResult (Left "null"))
-                                (onResult . Right . (round . (realToFrac :: c -> Double)))
-                            )
-                            v
+                        ( V.generate (VU.length v) $ \i ->
+                            if bitmapTestBit bm i
+                                then onResult (Right (round (realToFrac (VU.unsafeIndex v i) :: Double)))
+                                else onResult (Left "null")
                         )
             SFalse -> case sIntegral @c of
                 STrue ->
                     Right $
                         fromVector @b
-                            ( V.map
-                                (maybe (onResult (Left "null")) (onResult . Right . (fromIntegral :: c -> Int)))
-                                v
+                            ( V.generate (VU.length v) $ \i ->
+                                if bitmapTestBit bm i
+                                    then onResult (Right (fromIntegral (VU.unsafeIndex v i) :: Int))
+                                    else onResult (Left "null")
                             )
-                SFalse -> tryParseWith @Int onResult col
-    BoxedColumn _ -> tryParseWith @Int onResult col
+                SFalse -> castMismatch @c @b
+    BoxedColumn _ _ -> tryParseWith @Int onResult col
 
 -- | Single parse primitive: apply @onResult@ to the result of 'reads'.
 parseWith :: (Read a) => (Either String a -> b) -> String -> b
@@ -401,27 +394,18 @@ tryParseWith ::
     (Columnable a, Columnable b) =>
     (Either String a -> b) -> Column -> Either DataFrameException Column
 tryParseWith onResult col = case col of
-    BoxedColumn (v :: V.Vector c) ->
+    BoxedColumn bm (v :: V.Vector c) ->
         case testEquality (typeRep @c) (typeRep @String) of
-            Just Refl -> Right $ fromVector @b $ V.map (parseWith onResult) v
+            Just Refl -> case bm of
+                Nothing -> Right $ fromVector @b $ V.map (parseWith onResult) v
+                Just bitmap -> Right $ fromVector @b $ V.imap (\i x -> if bitmapTestBit bitmap i then parseWith onResult x else onResult (Left "null")) v
             Nothing ->
                 case testEquality (typeRep @c) (typeRep @T.Text) of
-                    Just Refl -> Right $ fromVector @b $ V.map (parseWith onResult . T.unpack) v
+                    Just Refl -> case bm of
+                        Nothing -> Right $ fromVector @b $ V.map (parseWith onResult . T.unpack) v
+                        Just bitmap -> Right $ fromVector @b $ V.imap (\i x -> if bitmapTestBit bitmap i then parseWith onResult (T.unpack x) else onResult (Left "null")) v
                     Nothing -> castMismatch @c @b
-    OptionalColumn (v :: V.Vector (Maybe c)) ->
-        case testEquality (typeRep @c) (typeRep @String) of
-            Just Refl ->
-                Right $
-                    fromVector @b $
-                        V.map (maybe (onResult (Left "null")) (parseWith onResult)) v
-            Nothing ->
-                case testEquality (typeRep @c) (typeRep @T.Text) of
-                    Just Refl ->
-                        Right $
-                            fromVector @b $
-                                V.map (maybe (onResult (Left "null")) (parseWith onResult . T.unpack)) v
-                    Nothing -> castMismatch @c @b
-    UnboxedColumn (_ :: VU.Vector c) -> castMismatch @c @b
+    UnboxedColumn _ (_ :: VU.Vector c) -> castMismatch @c @b
 
 {- | When the output type @b@ is @Maybe c@ (or @Maybe (Maybe c)@) and the
 column stores plain @c@ values, wrap each element in 'Just'.
@@ -436,16 +420,15 @@ tryMaybeWrap ::
     (Columnable a, Columnable b) =>
     (Either String a -> b) -> Column -> Maybe (Either DataFrameException Column)
 tryMaybeWrap _onResult col = case col of
-    UnboxedColumn (v :: VU.Vector c) ->
+    UnboxedColumn Nothing (v :: VU.Vector c) ->
         let wrapped = V.map Just (VG.convert v) :: V.Vector (Maybe c)
          in case testEquality (typeRep @b) (typeRep @(Maybe c)) of
                 Just Refl -> Just $ Right $ fromVector @b wrapped
                 Nothing ->
-                    -- join: b = Maybe (Maybe c) → produce Maybe c column
                     case testEquality (typeRep @b) (typeRep @(Maybe (Maybe c))) of
                         Just _ -> Just $ Right $ fromVector @(Maybe c) wrapped
                         Nothing -> Nothing
-    BoxedColumn (v :: V.Vector c) ->
+    BoxedColumn Nothing (v :: V.Vector c) ->
         let wrapped = V.map Just v :: V.Vector (Maybe c)
          in case testEquality (typeRep @b) (typeRep @(Maybe c)) of
                 Just Refl -> Just $ Right $ fromVector @b wrapped
@@ -453,7 +436,6 @@ tryMaybeWrap _onResult col = case col of
                     case testEquality (typeRep @b) (typeRep @(Maybe (Maybe c))) of
                         Just _ -> Just $ Right $ fromVector @(Maybe c) wrapped
                         Nothing -> Nothing
-    -- OptionalColumn and NullableColumn are already handled by the hasElemType guards above.
     _ -> Nothing
 
 castMismatch ::
@@ -772,4 +754,4 @@ interpretAggregation gdf expr = do
             -- The Column payload is intentionally unused — the only
             -- call-site ('aggregate') immediately throws
             -- 'UnaggregatedException' on this constructor.
-            Right $ UnAggregated $ BoxedColumn @T.Text V.empty
+            Right $ UnAggregated $ BoxedColumn @T.Text Nothing V.empty

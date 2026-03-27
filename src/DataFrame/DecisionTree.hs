@@ -638,13 +638,19 @@ numericCols :: DataFrame -> [NumExpr]
 numericCols df = concatMap extract (columnNames df)
   where
     extract col = case unsafeGetColumn col df of
-        UnboxedColumn (_ :: VU.Vector b) ->
+        UnboxedColumn Nothing (_ :: VU.Vector b) ->
             case testEquality (typeRep @b) (typeRep @Double) of
                 Just Refl -> [NDouble (Col col)]
                 Nothing -> case sIntegral @b of
                     STrue -> [NDouble (F.toDouble (Col @b col))]
                     SFalse -> []
-        OptionalColumn (_ :: V.Vector (Maybe b)) ->
+        BoxedColumn (Just _) (_ :: V.Vector b) ->
+            case testEquality (typeRep @b) (typeRep @Double) of
+                Just Refl -> [NMaybeDouble (Col @(Maybe b) col)]
+                Nothing -> case sIntegral @b of
+                    STrue -> [NMaybeDouble (F.whenPresent (realToFrac @b @Double) (Col @(Maybe b) col))]
+                    SFalse -> []
+        UnboxedColumn (Just _) (_ :: VU.Vector b) ->
             case testEquality (typeRep @b) (typeRep @Double) of
                 Just Refl -> [NMaybeDouble (Col @(Maybe b) col)]
                 Nothing -> case sIntegral @b of
@@ -697,18 +703,18 @@ generateConditionsOld cfg df =
     let
         genConds :: T.Text -> [Expr Bool]
         genConds colName = case unsafeGetColumn colName df of
-            (BoxedColumn (col :: V.Vector a)) ->
+            (BoxedColumn Nothing (col :: V.Vector a)) ->
                 let ps = map (Lit . (`percentileOrd'` col)) [1, 25, 75, 99]
                  in map (F.lift2 (==) (Col @a colName)) ps
-            (OptionalColumn (col :: V.Vector (Maybe a))) -> case sFloating @a of
+            (BoxedColumn (Just _) (col :: V.Vector a)) -> case sFloating @a of
                 STrue -> [] -- handled by numericCols / numericExprs
                 SFalse -> case sIntegral @a of
                     STrue -> [] -- handled by numericCols / numericExprs
                     SFalse ->
                         map
-                            (F.lift2 (==) (Col @(Maybe a) colName) . Lit . (`percentileOrd'` col))
+                            (F.lift2 (==) (Col @(Maybe a) colName) . Lit . Just . (`percentileOrd'` col))
                             [1, 25, 75, 99]
-            (UnboxedColumn (_ :: VU.Vector a)) -> []
+            (UnboxedColumn _ (_ :: VU.Vector a)) -> []
 
         columnConds =
             concatMap
@@ -724,13 +730,13 @@ generateConditionsOld cfg df =
                 ]
           where
             colConds (!l, !r) = case (unsafeGetColumn l df, unsafeGetColumn r df) of
-                (BoxedColumn (col1 :: V.Vector a), BoxedColumn (_ :: V.Vector b)) ->
+                (BoxedColumn Nothing (col1 :: V.Vector a), BoxedColumn Nothing (_ :: V.Vector b)) ->
                     case testEquality (typeRep @a) (typeRep @b) of
                         Nothing -> []
                         Just Refl -> [F.lift2 (==) (Col @a l) (Col @a r)]
-                (UnboxedColumn (_ :: VU.Vector a), UnboxedColumn (_ :: VU.Vector b)) -> []
-                ( OptionalColumn (_ :: V.Vector (Maybe a))
-                    , OptionalColumn (_ :: V.Vector (Maybe b))
+                (UnboxedColumn _ (_ :: VU.Vector a), UnboxedColumn _ (_ :: VU.Vector b)) -> []
+                ( BoxedColumn (Just _) (_ :: V.Vector a)
+                    , BoxedColumn (Just _) (_ :: V.Vector b)
                     ) -> case testEquality (typeRep @a) (typeRep @b) of
                         Nothing -> []
                         Just Refl -> case testEquality (typeRep @a) (typeRep @T.Text) of

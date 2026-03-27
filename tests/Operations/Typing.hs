@@ -77,7 +77,7 @@ parseBools =
         afterParse = [True, True, True] ++ [False, False, False]
         beforeParse :: [T.Text]
         beforeParse = ["True", "true", "TRUE"] ++ ["False", "false", "FALSE"]
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -95,7 +95,7 @@ parseInts =
         afterParse = [1 .. 50]
         beforeParse :: [T.Text]
         beforeParse = T.pack . show <$> [1 .. 50]
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -115,7 +115,7 @@ parseDoubles =
         beforeParse =
             T.pack . show
                 <$> [1.0 .. 50.0] ++ [3.14, 2.22, 8.55, 23.3, 12.22222235049450945049504950]
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -131,7 +131,7 @@ parseDates :: Test
 parseDates =
     let afterParse = datesExpected
         beforeParse = datesInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -146,7 +146,7 @@ parseDates =
 parseTexts :: Test
 parseTexts = TestCase $ do
     texts <- T.lines <$> TIO.readFile (typingDataDir <> "texts.txt")
-    let expected = DI.OptionalColumn $ V.fromList (map Just texts)
+    let expected = DI.fromVector $ V.fromList texts
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -163,7 +163,7 @@ parseBoolsAndIntsAsTexts =
         afterParse = ["True", "true", "TRUE"] ++ ["False", "false", "FALSE"] ++ ["1", "0", "1"]
         beforeParse :: [T.Text]
         beforeParse = ["True", "true", "TRUE"] ++ ["False", "false", "FALSE"] ++ ["1", "0", "1"]
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -179,7 +179,7 @@ parseIntsAndDoublesAsDoubles :: Test
 parseIntsAndDoublesAsDoubles =
     let afterParse = intsAndDoublesExpected
         beforeParse = intsAndDoublesInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -199,7 +199,7 @@ parseIntsAndDatesAsTexts =
         afterParse = data30 ++ data9dates
         beforeParse :: [T.Text]
         beforeParse = data30 ++ data9dates
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -218,7 +218,7 @@ parseTextsAndDoublesAsTexts =
         afterParse = shortTexts ++ doublesInput
         beforeParse :: [T.Text]
         beforeParse = shortTexts ++ doublesInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -237,7 +237,7 @@ parseDatesAndTextsAsTexts =
         afterParse = datesInput ++ extra
         beforeParse :: [T.Text]
         beforeParse = datesInput ++ extra
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -257,7 +257,7 @@ parseBoolsWithoutSafeRead =
         afterParse = replicate 10 True ++ replicate 10 False
         beforeParse :: [T.Text]
         beforeParse = replicate 10 "true" ++ replicate 10 "false"
-        expected = DI.UnboxedColumn $ VU.fromList afterParse
+        expected = DI.UnboxedColumn Nothing $ VU.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -274,7 +274,7 @@ parseIntsWithoutSafeRead :: Test
 parseIntsWithoutSafeRead =
     let afterParse = intsExpected
         beforeParse = intsInput
-        expected = DI.UnboxedColumn $ VU.fromList afterParse
+        expected = DI.UnboxedColumn Nothing $ VU.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -291,7 +291,7 @@ parseDoublesWithoutSafeRead :: Test
 parseDoublesWithoutSafeRead =
     let afterParse = doublesExpected
         beforeParse = doublesInput
-        expected = DI.UnboxedColumn $ VU.fromList afterParse
+        expected = DI.UnboxedColumn Nothing $ VU.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -308,7 +308,7 @@ parseDatesWithoutSafeRead :: Test
 parseDatesWithoutSafeRead =
     let afterParse = datesExpected
         beforeParse = datesInput
-        expected = DI.BoxedColumn $ V.fromList afterParse
+        expected = DI.BoxedColumn Nothing $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -324,7 +324,7 @@ parseDatesWithoutSafeRead =
 parseTextsWithoutSafeRead :: Test
 parseTextsWithoutSafeRead = TestCase $ do
     texts <- T.lines <$> TIO.readFile (typingDataDir <> "texts.txt")
-    let expected = DI.BoxedColumn $ V.fromList texts
+    let expected = DI.BoxedColumn Nothing $ V.fromList texts
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -341,7 +341,7 @@ parseBoolsAndEmptyStringsWithoutSafeRead =
         afterParse = replicate 10 Nothing ++ replicate 10 (Just True) ++ replicate 10 (Just False)
         beforeParse :: [T.Text]
         beforeParse = replicate 10 "" ++ replicate 10 "true" ++ replicate 10 "false"
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -359,7 +359,7 @@ parseIntsAndEmptyStringsWithoutSafeRead =
     let beforeParse = replicate 5 "" ++ intsInput
         afterParse :: [Maybe Int]
         afterParse = replicate 5 Nothing ++ map Just intsExpected
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -390,7 +390,7 @@ parseIntsAndDoublesAndEmptyStringsWithoutSafeRead =
                     (\g -> map Just g ++ [Nothing])
                     [[11.0 .. 20.0], [21.0 .. 30.0], [31.0 .. 40.0], [41.0 .. 50.0]]
                 ++ map Just doublesSpecial
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -410,7 +410,7 @@ parseDatesAndEmptyStringsWithoutSafeRead =
         beforeParse = concatMap (\g -> map (T.pack . show) g ++ [""]) groups
         afterParse :: [Maybe Day]
         afterParse = concatMap (\g -> map Just g ++ [Nothing]) groups
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -430,7 +430,7 @@ parseTextsAndEmptyStringsWithoutSafeRead :: Test
 parseTextsAndEmptyStringsWithoutSafeRead = TestCase $ do
     raw <- T.lines <$> TIO.readFile (typingDataDir <> "texts_with_empties.txt")
     let afterParse = map (\t -> if t == "" then Nothing else Just t) raw
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -447,7 +447,7 @@ parseBoolsAndNullishStringsWithoutSafeRead =
         afterParse = replicate 10 "N/A" ++ replicate 10 "True" ++ replicate 10 "False"
         beforeParse :: [T.Text]
         beforeParse = replicate 10 "N/A" ++ replicate 10 "True" ++ replicate 10 "False"
-        expected = DI.BoxedColumn $ V.fromList afterParse
+        expected = DI.BoxedColumn Nothing $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -465,7 +465,7 @@ parseIntsAndNullishStringsWithoutSafeRead =
     let beforeParse = replicate 5 "N/A" ++ intsInput
         afterParse :: [T.Text]
         afterParse = beforeParse
-        expected = DI.BoxedColumn $ V.fromList afterParse
+        expected = DI.BoxedColumn Nothing $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -495,7 +495,7 @@ parseIntsAndDoublesAndNullishStringsWithoutSafeRead =
                 ++ doublesSpecialInput
         afterParse :: [T.Text]
         afterParse = beforeParse
-        expected = DI.BoxedColumn $ V.fromList afterParse
+        expected = DI.BoxedColumn Nothing $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -521,7 +521,7 @@ parseIntsAndNullishAndEmptyStringsWithoutSafeRead =
             replicate 5 (Just "N/A")
                 ++ concatMap (\g -> Nothing : map (Just . T.pack . show) g) groups
                 ++ [Nothing]
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -540,7 +540,7 @@ parseTextsAndEmptyAndNullishStringsWithoutSafeRead = TestCase $ do
         T.lines <$> TIO.readFile (typingDataDir <> "texts_with_empties_and_nullish.txt")
     -- safeRead=False: empty strings -> Nothing, nullish text stays as Just
     let afterParse = map (\t -> if t == "" then Nothing else Just t) raw
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 10, D.parseSafe = False})
@@ -558,7 +558,7 @@ parseBoolsAndEmptyStringsWithSafeRead =
         afterParse = replicate 10 Nothing ++ replicate 10 (Just True)
         beforeParse :: [T.Text]
         beforeParse = replicate 10 "" ++ replicate 10 "true"
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -575,7 +575,7 @@ parseIntsAndEmptyStringsWithSafeRead =
     let beforeParse = replicate 5 "" ++ intsInput
         afterParse :: [Maybe Int]
         afterParse = replicate 5 Nothing ++ map Just intsExpected
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -605,7 +605,7 @@ parseIntsAndDoublesAndEmptyStringsWithSafeRead =
                     (\g -> map Just g ++ [Nothing])
                     [[11.0 .. 20.0], [21.0 .. 30.0], [31.0 .. 40.0], [41.0 .. 50.0]]
                 ++ map Just doublesSpecial
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -623,7 +623,7 @@ parseDatesAndEmptyStringsWithSafeRead =
         beforeParse = concatMap (\g -> map (T.pack . show) g ++ [""]) groups
         afterParse :: [Maybe Day]
         afterParse = concatMap (\g -> map Just g ++ [Nothing]) groups
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -642,7 +642,7 @@ parseTextsAndEmptyStringsWithSafeRead :: Test
 parseTextsAndEmptyStringsWithSafeRead = TestCase $ do
     raw <- T.lines <$> TIO.readFile (typingDataDir <> "texts_with_empties.txt")
     let afterParse = map (\t -> if t == "" then Nothing else Just t) raw
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -657,7 +657,7 @@ parseIntsAndNullishStringsWithSafeRead =
     let beforeParse = replicate 5 "N/A" ++ intsInput
         afterParse :: [Maybe Int]
         afterParse = replicate 5 Nothing ++ map Just intsExpected
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -693,7 +693,7 @@ parseIntsAndDoublesAndNullishStringsWithSafeRead =
                     (\g -> map Just g ++ [Nothing])
                     [[11.0 .. 20.0], [21.0 .. 30.0], [31.0 .. 40.0], [41.0 .. 50.0]]
                 ++ map Just [3.14, 2.22, 8.55, 23.3, 12.03]
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -718,7 +718,7 @@ parseIntsAndNullishAndEmptyStringsWithSafeRead =
             replicate 5 Nothing
                 ++ concatMap (\g -> Nothing : map Just g) groups
                 ++ [Nothing]
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -750,7 +750,7 @@ parseIntsAndDoublesAndNullishAndEmptyStringsWithSafeRead =
                 ++ [Nothing]
                 ++ map Just ([21 .. 30] :: [Double])
                 ++ [Nothing, Just 3.14]
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -769,7 +769,7 @@ parseTextsAndEmptyAndNullishStringsWithSafeRead = TestCase $ do
     -- safeRead=True: empty strings and nullish tokens (NaN, Nothing, N/A) -> Nothing
     let isNullish t = t `elem` ["NaN", "Nothing", "N/A", "nan", "null", "NULL", "NA", "na", "NAN"]
         afterParse = map (\t -> if t == "" || isNullish t then Nothing else Just t) raw
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -786,7 +786,7 @@ parseBoolsWithOneExample =
         afterParse = False : replicate 50 True
         beforeParse :: [T.Text]
         beforeParse = "false" : replicate 50 "true"
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 1}) $
                 DI.fromVector $
@@ -804,7 +804,7 @@ parseBoolsWithManyExamples =
         afterParse = False : replicate 50 True
         beforeParse :: [T.Text]
         beforeParse = "false" : replicate 50 "true"
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 49}) $
                 DI.fromVector $
@@ -820,7 +820,7 @@ parseIntsWithOneExample :: Test
 parseIntsWithOneExample =
     let afterParse = intsExpected
         beforeParse = intsInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 1}) $
                 DI.fromVector $
@@ -836,7 +836,7 @@ parseIntsWithTwentyFiveExamples :: Test
 parseIntsWithTwentyFiveExamples =
     let afterParse = intsExpected
         beforeParse = intsInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 25}) $
                 DI.fromVector $
@@ -852,7 +852,7 @@ parseIntsWithFortyNineExamples :: Test
 parseIntsWithFortyNineExamples =
     let afterParse = intsExpected
         beforeParse = intsInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 49}) $
                 DI.fromVector $
@@ -868,7 +868,7 @@ parseDatesWithOneExample :: Test
 parseDatesWithOneExample =
     let afterParse = datesExpected
         beforeParse = datesInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 1}) $
                 DI.fromVector $
@@ -884,7 +884,7 @@ parseDatesWithFifteenExamples :: Test
 parseDatesWithFifteenExamples =
     let afterParse = datesExpected
         beforeParse = datesInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 15}) $
                 DI.fromVector $
@@ -900,7 +900,7 @@ parseIntsAndDoublesAsDoublesWithOneExample :: Test
 parseIntsAndDoublesAsDoublesWithOneExample =
     let afterParse = intsAndDoublesExpected
         beforeParse = intsAndDoublesInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 1}) $
                 DI.fromVector $
@@ -916,7 +916,7 @@ parseIntsAndDoublesAsDoublesWithManyExamples :: Test
 parseIntsAndDoublesAsDoublesWithManyExamples =
     let afterParse = intsAndDoublesExpected
         beforeParse = intsAndDoublesInput
-        expected = DI.OptionalColumn $ V.fromList (map Just afterParse)
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 50}) $
                 DI.fromVector $
@@ -942,7 +942,7 @@ parseIntsAndDoublesAndEmptyStringsAsDoublesWithOneExampleWithSafeReadOff =
                 ++ map Just ([1.0 .. 50.0] :: [Double])
                 ++ map Just ([1.0 .. 50.0] :: [Double])
                 ++ map Just doublesSpecial
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 1, D.parseSafe = False}) $
                 DI.fromVector $
@@ -968,7 +968,7 @@ parseIntsAndDoublesAndEmptyStringsAsDoublesWithManyExamplesWithSafeReadOff =
                 ++ map Just ([1.0 .. 50.0] :: [Double])
                 ++ map Just ([1.0 .. 50.0] :: [Double])
                 ++ map Just doublesSpecial
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 30, D.parseSafe = False})
@@ -999,7 +999,7 @@ parseIntsAndDoublesAndEmptyStringsAndNullishAsStringssWithOneExampleWithSafeRead
                 ++ map (Just . T.pack . show) ([1 .. 20] :: [Int])
                 ++ map (Just . T.pack . show) ([1.0 .. 30.0] :: [Double])
                 ++ map Just doublesSpecialInput
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 1, D.parseSafe = False}) $
                 DI.fromVector $
@@ -1028,7 +1028,7 @@ parseIntsAndDoublesAndEmptyStringsAndNullishAsStringssWithManyExamplesWithSafeRe
                 ++ map (Just . T.pack . show) ([1 .. 20] :: [Int])
                 ++ map (Just . T.pack . show) ([1.0 .. 30.0] :: [Double])
                 ++ map Just doublesSpecialInput
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault
                 (D.defaultParseOptions{D.sampleSize = 30, D.parseSafe = False})
@@ -1049,7 +1049,7 @@ parseManyNullishAndOneInt =
         afterParse = replicate 100 Nothing ++ [Just 100000]
         beforeParse :: [T.Text]
         beforeParse = replicate 100 "NaN" ++ ["100000"]
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -1063,7 +1063,7 @@ parseManyNullishAndOneDouble =
         afterParse = replicate 100 Nothing ++ [Just 3.14]
         beforeParse :: [T.Text]
         beforeParse = replicate 100 "NaN" ++ ["3.14"]
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -1077,7 +1077,7 @@ parseManyNullishAndOneDate =
         afterParse = replicate 100 Nothing ++ [Just $ fromGregorian 2024 12 25]
         beforeParse :: [T.Text]
         beforeParse = replicate 100 "NaN" ++ ["2024-12-25"]
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -1091,7 +1091,7 @@ parseManyNullishAndIncorrectDates =
         afterParse = replicate 100 Nothing ++ [Just "2024-12-25", Just "2024-12-w6"]
         beforeParse :: [T.Text]
         beforeParse = replicate 100 "NaN" ++ ["2024-12-25", "2024-12-w6"]
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $
@@ -1105,7 +1105,7 @@ parseRepeatedNullish =
         afterParse = replicate 100 Nothing
         beforeParse :: [T.Text]
         beforeParse = replicate 100 "NaN"
-        expected = DI.OptionalColumn $ V.fromList afterParse
+        expected = DI.fromVector $ V.fromList afterParse
         actual =
             D.parseDefault (D.defaultParseOptions{D.sampleSize = 10}) $
                 DI.fromVector $

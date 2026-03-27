@@ -213,7 +213,7 @@ correlation first second df = do
 
 _getColumnAsDouble :: T.Text -> DataFrame -> Maybe (VU.Vector Double)
 _getColumnAsDouble name df = case getColumn name df of
-    Just (UnboxedColumn (f :: VU.Vector a)) -> case testEquality (typeRep @a) (typeRep @Double) of
+    Just (UnboxedColumn _ (f :: VU.Vector a)) -> case testEquality (typeRep @a) (typeRep @Double) of
         Just Refl -> Just f
         Nothing -> case sIntegral @a of
             STrue -> Just (VU.map fromIntegral f)
@@ -238,14 +238,11 @@ sum ::
     forall a. (Columnable a, Num a) => Expr a -> DataFrame -> a
 sum (Col name) df = case getColumn name df of
     Nothing -> throw $ ColumnsNotFoundException [name] "sum" (M.keys $ columnIndices df)
-    Just ((UnboxedColumn (column :: VU.Vector a'))) -> case testEquality (typeRep @a') (typeRep @a) of
+    Just ((UnboxedColumn _ (column :: VU.Vector a'))) -> case testEquality (typeRep @a') (typeRep @a) of
         Just Refl -> VG.sum column
         Nothing -> 0
-    Just ((BoxedColumn (column :: V.Vector a'))) -> case testEquality (typeRep @a') (typeRep @a) of
+    Just ((BoxedColumn _ (column :: V.Vector a'))) -> case testEquality (typeRep @a') (typeRep @a) of
         Just Refl -> VG.sum column
-        Nothing -> 0
-    Just ((OptionalColumn (column :: V.Vector (Maybe a')))) -> case testEquality (typeRep @a') (typeRep @a) of
-        Just Refl -> VG.sum (VG.map (fromMaybe 0) column)
         Nothing -> 0
 sum expr df = case interpret df expr of
     Left e -> throw e

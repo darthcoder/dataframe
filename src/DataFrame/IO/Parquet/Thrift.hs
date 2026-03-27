@@ -68,9 +68,8 @@ createParquetSchema df = schemaDef : map toSchemaElement (DI.columnNames df)
         let
             colType :: TType
             colType = case unsafeGetColumn colName df of
-                (DI.BoxedColumn (col :: V.Vector a)) -> haskellToTType @a
-                (DI.UnboxedColumn (col :: VU.Vector a)) -> haskellToTType @a
-                (DI.OptionalColumn (col :: V.Vector (Maybe a))) -> haskellToTType @a
+                (DI.BoxedColumn _ (col :: V.Vector a)) -> haskellToTType @a
+                (DI.UnboxedColumn _ (col :: VU.Vector a)) -> haskellToTType @a
             lType =
                 if DI.hasElemType @T.Text (unsafeGetColumn colName df)
                     || DI.hasElemType @(Maybe T.Text) (unsafeGetColumn colName df)

@@ -18,7 +18,7 @@ import qualified DataFrame as D
 import Data.Function (on)
 import Data.Maybe (fromMaybe)
 import Data.Type.Equality (testEquality, (:~:) (Refl))
-import DataFrame.Internal.Column (Column (..), columnTypeString)
+import DataFrame.Internal.Column (Column (..), columnTypeString, bitmapTestBit)
 import qualified DataFrame.Internal.Column as DI
 import DataFrame.Internal.DataFrame (
     DataFrame (..),
@@ -80,24 +80,20 @@ getRowEscaped :: Char -> DataFrame -> Int -> [T.Text]
 getRowEscaped sep df i = V.ifoldr go [] (columns df)
   where
     go :: Int -> Column -> [T.Text] -> [T.Text]
-    go _ (BoxedColumn (c :: V.Vector a)) acc = case c V.!? i of
+    go _ (BoxedColumn bm (c :: V.Vector a)) acc = case c V.!? i of
         Just e -> escapeField sep textRep : acc
           where
-            textRep = case testEquality (typeRep @a) (typeRep @T.Text) of
-                Just Refl -> e
-                Nothing -> T.pack (show e)
+            isNull = case bm of Just bm' -> not (bitmapTestBit bm' i); Nothing -> False
+            textRep = if isNull then "" else
+                case testEquality (typeRep @a) (typeRep @T.Text) of
+                    Just Refl -> e
+                    Nothing -> T.pack (show e)
         Nothing -> acc
-    go _ (UnboxedColumn c) acc = case c VU.!? i of
-        Just e -> escapeField sep (T.pack (show e)) : acc
-        Nothing -> acc
-    go _ (OptionalColumn (c :: V.Vector (Maybe a))) acc = case c V.!? i of
-        Just e -> escapeField sep textRep : acc
-          where
-            textRep = case testEquality (typeRep @a) (typeRep @T.Text) of
-                Just Refl -> fromMaybe "" e
-                Nothing -> case e of
-                    Just val -> T.pack (show val)
-                    Nothing -> ""
+    go _ (UnboxedColumn bm c) acc = case c VU.!? i of
+        Just e ->
+            let isNull = case bm of Just bm' -> not (bitmapTestBit bm' i); Nothing -> False
+                textRep = if isNull then "" else T.pack (show e)
+             in escapeField sep textRep : acc
         Nothing -> acc
 
 testFastCsv :: String -> FilePath -> Test
@@ -168,11 +164,11 @@ specifyTypesNoInferenceFallback =
                 arbuthnotPath
         -- "year" must be Int
         case getColumn "year" df of
-            Just col@(UnboxedColumn _) -> assertEqual "year should be Int" "Int" (columnTypeString col)
+            Just col@(UnboxedColumn _ _) -> assertEqual "year should be Int" "Int" (columnTypeString col)
             _ -> assertFailure "expected UnboxedColumn for 'year'"
         -- "boys" unspecified + NoInference → stays Text
         case getColumn "boys" df of
-            Just col@(BoxedColumn _) -> assertEqual "boys should be Text" "Text" (columnTypeString col)
+            Just col@(BoxedColumn _ _) -> assertEqual "boys should be Text" "Text" (columnTypeString col)
             _ -> assertFailure "expected BoxedColumn for 'boys' with NoInference fallback"
 
 -- SpecifyTypes with InferFromSample fallback: named column typed, rest inferred
@@ -190,11 +186,11 @@ specifyTypesInferFallback =
                 arbuthnotPath
         -- "year" must be Int (explicitly specified)
         case getColumn "year" df of
-            Just col@(UnboxedColumn _) -> assertEqual "year should be Int" "Int" (columnTypeString col)
+            Just col@(UnboxedColumn _ _) -> assertEqual "year should be Int" "Int" (columnTypeString col)
             _ -> assertFailure "expected UnboxedColumn for 'year'"
         -- "boys" unspecified + InferFromSample → inferred as Int
         case getColumn "boys" df of
-            Just col@(UnboxedColumn _) -> assertEqual "boys should be Int" "Int" (columnTypeString col)
+            Just col@(UnboxedColumn _ _) -> assertEqual "boys should be Int" "Int" (columnTypeString col)
             _ ->
                 assertFailure "expected UnboxedColumn for 'boys' with InferFromSample fallback"
 
@@ -213,7 +209,7 @@ specifyTypesSampleSize =
                     }
                 arbuthnotPath
         case getColumn "girls" df of
-            Just col@(UnboxedColumn _) -> assertEqual "girls should be Int" "Int" (columnTypeString col)
+            Just col@(UnboxedColumn _ _) -> assertEqual "girls should be Int" "Int" (columnTypeString col)
             _ ->
                 assertFailure
                     "expected UnboxedColumn for 'girls' via fallback InferFromSample 10"

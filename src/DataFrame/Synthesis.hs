@@ -177,7 +177,7 @@ deduplicate df = go S.empty . nubOrd . L.sortBy (\e1 e2 -> compare (eSize e1) (e
             Left e -> throw e
             Right v -> v
         hasInvalid = case res of
-            (TColumn (UnboxedColumn (col :: VU.Vector b))) -> case testEquality (typeRep @Double) (typeRep @b) of
+            (TColumn (UnboxedColumn _ (col :: VU.Vector b))) -> case testEquality (typeRep @Double) (typeRep @b) of
                 Just Refl -> VU.any (\n -> isNaN n || isInfinite n) col
                 Nothing -> False
             _ -> False

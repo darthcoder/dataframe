@@ -850,13 +850,10 @@ extractStringColumn colName df =
         Just idx ->
             let col = columns df V.! idx
              in case col of
-                    BoxedColumn (vec :: V.Vector a) -> case testEquality (typeRep @a) (typeRep @T.Text) of
+                    BoxedColumn _ (vec :: V.Vector a) -> case testEquality (typeRep @a) (typeRep @T.Text) of
                         Just Refl -> V.toList vec
                         Nothing -> V.toList $ V.map (T.pack . show) vec
-                    UnboxedColumn vec -> V.toList $ VG.map (T.pack . show) (VG.convert vec)
-                    OptionalColumn (vec :: V.Vector (Maybe a)) -> case testEquality (typeRep @a) (typeRep @T.Text) of
-                        Nothing -> V.toList $ V.map (T.pack . show) vec
-                        Just Refl -> V.toList $ V.map (maybe "Nothing" ("Just " <>)) vec
+                    UnboxedColumn _ vec -> V.toList $ VG.map (T.pack . show) (VG.convert vec)
 
 extractNumericColumn :: (HasCallStack) => T.Text -> DataFrame -> [Double]
 extractNumericColumn colName df =
@@ -865,8 +862,8 @@ extractNumericColumn colName df =
         Just idx ->
             let col = columns df V.! idx
              in case col of
-                    BoxedColumn vec -> vectorToDoubles vec
-                    UnboxedColumn vec -> unboxedVectorToDoubles vec
+                    BoxedColumn _ vec -> vectorToDoubles vec
+                    UnboxedColumn _ vec -> unboxedVectorToDoubles vec
                     _ -> []
 
 vectorToDoubles :: forall a. (Columnable a, Show a) => V.Vector a -> [Double]
@@ -898,21 +895,14 @@ getCategoricalCounts colName df =
         Just idx ->
             let col = columns df V.! idx
              in case col of
-                    BoxedColumn (vec :: V.Vector a) ->
+                    BoxedColumn _ (vec :: V.Vector a) ->
                         let counts = countValues vec
                          in case testEquality (typeRep @a) (typeRep @T.Text) of
                                 Nothing -> Just [(T.pack (show k), fromIntegral v) | (k, v) <- counts]
                                 Just Refl -> Just [(k, fromIntegral v) | (k, v) <- counts]
-                    UnboxedColumn vec ->
+                    UnboxedColumn _ vec ->
                         let counts = countValuesUnboxed vec
                          in Just [(T.pack (show k), fromIntegral v) | (k, v) <- counts]
-                    OptionalColumn (vec :: V.Vector (Maybe a)) ->
-                        let counts = countValues vec
-                         in case testEquality (typeRep @a) (typeRep @T.Text) of
-                                Nothing -> Just [((T.pack . show) k, fromIntegral v) | (k, v) <- counts]
-                                Just Refl ->
-                                    Just
-                                        [(maybe "Nothing" ("Just " <>) k, fromIntegral v) | (k, v) <- counts]
   where
     countValues :: (Ord a, Show a) => V.Vector a -> [(a, Int)]
     countValues vec = M.toList $ V.foldr' (\x acc -> M.insertWith (+) x 1 acc) M.empty vec

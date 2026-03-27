@@ -173,9 +173,8 @@ mkRowFromArgs names df i = V.map get (V.fromList names)
                     [name]
                     "[INTERNAL] mkRowFromArgs"
                     (M.keys $ columnIndices df)
-        Just (BoxedColumn column) -> toAny (column V.! i)
-        Just (UnboxedColumn column) -> toAny (column VU.! i)
-        Just (OptionalColumn column) -> toAny (column V.! i)
+        Just (BoxedColumn _ column) -> toAny (column V.! i)
+        Just (UnboxedColumn _ column) -> toAny (column VU.! i)
 
 -- This function will return the items in the order that is specified
 -- by the user. For example, if the dataframe consists of the columns
@@ -193,13 +192,10 @@ mkRowRep df names i = V.generate (L.length names) (\index -> get (names' V.! ind
                 ++ "the other columns at index "
                 ++ show i
     get name = case getColumn name df of
-        Just (BoxedColumn c) -> case c V.!? i of
+        Just (BoxedColumn _ c) -> case c V.!? i of
             Just e -> toAny e
             Nothing -> throwError name
-        Just (OptionalColumn c) -> case c V.!? i of
-            Just e -> toAny e
-            Nothing -> throwError name
-        Just (UnboxedColumn c) -> case c VU.!? i of
+        Just (UnboxedColumn _ c) -> case c VU.!? i of
             Just e -> toAny e
             Nothing -> throwError name
         Nothing ->

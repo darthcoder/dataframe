@@ -439,7 +439,7 @@ nullableSepDF =
         [ ("label", DI.fromList (replicate 6 "pos" ++ replicate 6 "neg" :: [T.Text]))
         ,
             ( "x"
-            , DI.OptionalColumn
+            , DI.fromVector
                 ( V.fromList $
                     map (Just . fromIntegral) ([1 .. 6] :: [Int])
                         ++ map (Just . fromIntegral) ([7 .. 12] :: [Int]) ::
@@ -455,7 +455,7 @@ nullsMixedDF =
         [ ("label", DI.fromList (["pos", "pos", "pos", "neg", "neg", "neg"] :: [T.Text]))
         ,
             ( "x"
-            , DI.OptionalColumn
+            , DI.fromVector
                 ( V.fromList
                     [Just 1.0, Nothing, Just 3.0, Just 7.0, Nothing, Just 9.0] ::
                     V.Vector (Maybe Double)
@@ -463,16 +463,16 @@ nullsMixedDF =
             )
         ]
 
--- numericCols picks up OptionalColumn (Maybe Double) as NMaybeDouble.
+-- numericCols picks up DI.fromVector (Maybe Double) as NMaybeDouble.
 numericColsNullableDoubleTest :: Test
 numericColsNullableDoubleTest = TestCase $ do
     let exprs = numericCols nullableSepDF
         hasMD = any (\case NMaybeDouble _ -> True; _ -> False) exprs
     assertBool
-        "numericCols finds NMaybeDouble for OptionalColumn (Maybe Double)"
+        "numericCols finds NMaybeDouble for DI.fromVector (Maybe Double)"
         hasMD
 
--- numericCols picks up OptionalColumn (Maybe Int) as NMaybeDouble (via whenPresent).
+-- numericCols picks up DI.fromVector (Maybe Int) as NMaybeDouble (via whenPresent).
 numericColsNullableIntTest :: Test
 numericColsNullableIntTest = TestCase $ do
     let df =
@@ -480,18 +480,18 @@ numericColsNullableIntTest = TestCase $ do
                 [ ("label", DI.fromList (["pos", "neg"] :: [T.Text]))
                 ,
                     ( "n"
-                    , DI.OptionalColumn (V.fromList [Just (1 :: Int), Just 2] :: V.Vector (Maybe Int))
+                    , DI.fromVector (V.fromList [Just (1 :: Int), Just 2] :: V.Vector (Maybe Int))
                     )
                 ]
         hasMD = any (\case NMaybeDouble _ -> True; _ -> False) (numericCols df)
-    assertBool "numericCols finds NMaybeDouble for OptionalColumn (Maybe Int)" hasMD
+    assertBool "numericCols finds NMaybeDouble for DI.fromVector (Maybe Int)" hasMD
 
--- generateNumericConds is non-empty for a DF with an OptionalColumn (Maybe Double).
+-- generateNumericConds is non-empty for a DF with an DI.fromVector (Maybe Double).
 numericCondsNullableNonEmptyTest :: Test
 numericCondsNullableNonEmptyTest =
     TestCase $
         assertBool
-            "generateNumericConds non-empty for OptionalColumn (Maybe Double)"
+            "generateNumericConds non-empty for DI.fromVector (Maybe Double)"
             (not (null (generateNumericConds defaultTreeConfig nullableSepDF)))
 
 -- Null values evaluate to False for threshold conditions (null rows route right).
@@ -502,7 +502,7 @@ nullValueRoutesFalseTest = TestCase $ do
                 [ ("label", DI.fromList (["A", "B"] :: [T.Text]))
                 ,
                     ( "x"
-                    , DI.OptionalColumn
+                    , DI.fromVector
                         (V.fromList [Nothing, Just (5.0 :: Double)] :: V.Vector (Maybe Double))
                     )
                 ]
@@ -541,14 +541,14 @@ nullableFitWithNullsNoCrashTest = TestCase $ do
         (loss >= 0.0 && loss <= 1.0)
 
 -- numericExprsWithTerms produces cross-column combinations when one col is
--- OptionalColumn (Maybe Double) and another is a plain UnboxedColumn Double.
+-- DI.fromVector (Maybe Double) and another is a plain UnboxedColumn Double.
 numericExprsWithTermsMixedTest :: Test
 numericExprsWithTermsMixedTest = TestCase $ do
     let df =
             D.fromNamedColumns
                 [
                     ( "x"
-                    , DI.OptionalColumn
+                    , DI.fromVector
                         (V.fromList [Just 1.0, Just 2.0, Just 3.0] :: V.Vector (Maybe Double))
                     )
                 , ("y", DI.fromList ([4.0, 5.0, 6.0] :: [Double]))

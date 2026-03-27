@@ -15,7 +15,7 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Proxy as P
 import Data.Time
 import Data.Type.Equality (TestEquality (..))
-import DataFrame.Internal.Column (Column (..), ensureOptional, fromVector)
+import DataFrame.Internal.Column (Column (..), bitmapTestBit, ensureOptional, fromVector)
 import DataFrame.Internal.DataFrame (DataFrame (..), unsafeGetColumn)
 import DataFrame.Internal.Parsing
 import DataFrame.Internal.Schema
@@ -55,19 +55,19 @@ parseDefaults :: ParseOptions -> DataFrame -> DataFrame
 parseDefaults opts df = df{columns = V.map (parseDefault opts) (columns df)}
 
 parseDefault :: ParseOptions -> Column -> Column
-parseDefault opts (BoxedColumn (c :: V.Vector a)) =
+parseDefault opts (BoxedColumn Nothing (c :: V.Vector a)) =
     case (typeRep @a) `testEquality` (typeRep @T.Text) of
         Nothing -> case (typeRep @a) `testEquality` (typeRep @String) of
             Just Refl -> parseFromExamples opts (V.map T.pack c)
-            Nothing -> BoxedColumn c
+            Nothing -> BoxedColumn Nothing c
         Just Refl -> parseFromExamples opts c
-parseDefault opts (OptionalColumn (c :: V.Vector (Maybe a))) =
+parseDefault opts (BoxedColumn (Just bm) (c :: V.Vector a)) =
     case (typeRep @a) `testEquality` (typeRep @T.Text) of
         Nothing -> case (typeRep @a) `testEquality` (typeRep @String) of
             Just Refl ->
-                parseFromExamples opts (V.map (T.pack . fromMaybe "") c)
-            Nothing -> BoxedColumn c
-        Just Refl -> parseFromExamples opts (V.map (fromMaybe "") c)
+                parseFromExamples opts (V.imap (\i x -> if bitmapTestBit bm i then T.pack x else "") c)
+            Nothing -> BoxedColumn (Just bm) c
+        Just Refl -> parseFromExamples opts (V.imap (\i x -> if bitmapTestBit bm i then x else "") c)
 parseDefault _ column = column
 
 parseFromExamples :: ParseOptions -> V.Vector T.Text -> Column
@@ -234,7 +234,7 @@ parseWithTypes safe ts df
             ts
   where
     asType :: SchemaType -> Column -> Column
-    asType (SType (_ :: P.Proxy a)) c@(BoxedColumn (col :: V.Vector b)) = case typeRep @a of
+    asType (SType (_ :: P.Proxy a)) c@(BoxedColumn _ (col :: V.Vector b)) = case typeRep @a of
         App t1 t2 -> case eqTypeRep t1 (typeRep @Maybe) of
             Just HRefl -> case testEquality (typeRep @a) (typeRep @b) of
                 Just Refl -> c

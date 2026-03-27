@@ -17,6 +17,7 @@ import qualified Data.Vector.Generic as VG
 import qualified Data.Vector.Unboxed as VU
 
 import Control.Exception (throw)
+import Data.Bits (popCount)
 import Data.Either
 import qualified Data.Foldable as Fold
 import Data.Function (on, (&))
@@ -24,6 +25,7 @@ import Data.Maybe
 import Data.Type.Equality (TestEquality (..))
 import DataFrame.Errors
 import DataFrame.Internal.Column (
+    Bitmap,
     Column (..),
     Columnable,
     TypedColumn (..),
@@ -306,7 +308,7 @@ insertUnboxedVector ::
     -- | DataFrame to add the column to
     DataFrame ->
     DataFrame
-insertUnboxedVector name xs = insertColumn name (UnboxedColumn xs)
+insertUnboxedVector name xs = insertColumn name (UnboxedColumn Nothing xs)
 
 {- | /O(n)/ Add a column to the dataframe.
 
@@ -530,7 +532,7 @@ describeColumns df =
             [ColumnInfo]
     indexMap = M.fromList (map (\(a, b) -> (b, a)) $ M.toList (columnIndices df))
     columnName i = M.lookup i indexMap
-    go acc i col@(OptionalColumn (c :: V.Vector a)) =
+    go acc i col@(BoxedColumn bm (c :: V.Vector a)) =
         let
             cname = columnName i
             countNulls = nulls col
@@ -545,43 +547,30 @@ describeColumns df =
                         countNulls
                         columnType
                         : acc
-    go acc i col@(BoxedColumn (c :: V.Vector a)) =
+    go acc i col@(UnboxedColumn bm c) =
         let
             cname = columnName i
-            columnType = T.pack $ show $ typeRep @a
-         in
-            if isNothing cname
-                then acc
-                else
-                    ColumnInfo
-                        (fromMaybe "" cname)
-                        (columnLength col)
-                        0
-                        columnType
-                        : acc
-    go acc i col@(UnboxedColumn c) =
-        let
-            cname = columnName i
+            countNulls = nulls col
             columnType = T.pack $ columnTypeString col
          in
-            -- Unboxed columns cannot have nulls since Maybe
-            -- is not an instance of Unbox a
             if isNothing cname
                 then acc
                 else
-                    ColumnInfo (fromMaybe "" cname) (columnLength col) 0 columnType : acc
+                    ColumnInfo (fromMaybe "" cname) (columnLength col - countNulls) countNulls columnType : acc
 
 nulls :: Column -> Int
-nulls (OptionalColumn xs) = VG.length $ VG.filter isNothing xs
-nulls (BoxedColumn (xs :: V.Vector a)) = case testEquality (typeRep @a) (typeRep @T.Text) of
+nulls (BoxedColumn (Just bm) xs) =
+    -- count null bits in bitmap
+    let n = VG.length xs
+     in n - VU.foldl' (\acc b -> acc + popCount b) 0 bm
+nulls (BoxedColumn Nothing (xs :: V.Vector a)) = case testEquality (typeRep @a) (typeRep @T.Text) of
     Just Refl -> VG.length $ VG.filter isNullish xs
     Nothing -> case testEquality (typeRep @a) (typeRep @String) of
         Just Refl -> VG.length $ VG.filter (isNullish . T.pack) xs
-        Nothing -> case typeRep @a of
-            App t1 t2 -> case eqTypeRep t1 (typeRep @Maybe) of
-                Just HRefl -> VG.length $ VG.filter isNothing xs
-                Nothing -> 0
-            _ -> 0
+        Nothing -> 0
+nulls (UnboxedColumn (Just bm) xs) =
+    let n = VG.length xs
+     in n - VU.foldl' (\acc b -> acc + popCount b) 0 bm
 nulls _ = 0
 
 {- | Creates a dataframe from a list of tuples with name and column.
@@ -977,7 +966,8 @@ showDerivedExpressions df =
      in map toNamedExpr names
   where
     identityUExpr name = case getColumn name df of
-        Just (BoxedColumn (_ :: V.Vector a)) -> UExpr (Col @a name)
-        Just (UnboxedColumn (_ :: VU.Vector a)) -> UExpr (Col @a name)
-        Just (OptionalColumn (_ :: V.Vector (Maybe a))) -> UExpr (Col @(Maybe a) name)
+        Just (BoxedColumn (Just _) (_ :: V.Vector a)) -> UExpr (Col @(Maybe a) name)
+        Just (BoxedColumn Nothing (_ :: V.Vector a)) -> UExpr (Col @a name)
+        Just (UnboxedColumn (Just _) (_ :: VU.Vector a)) -> UExpr (Col @(Maybe a) name)
+        Just (UnboxedColumn Nothing (_ :: VU.Vector a)) -> UExpr (Col @a name)
         Nothing -> error $ "showDerivedExpressions: column not found: " ++ T.unpack name
