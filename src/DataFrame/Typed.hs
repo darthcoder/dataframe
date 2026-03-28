@@ -187,6 +187,7 @@ module DataFrame.Typed (
 
     -- * Schema type families (for advanced use)
     Lookup,
+    SafeLookup,
     HasName,
     SubsetSchema,
     ExcludeSchema,

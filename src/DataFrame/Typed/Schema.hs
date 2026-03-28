@@ -16,6 +16,7 @@
 module DataFrame.Typed.Schema (
     -- * Type families for schema manipulation
     Lookup,
+    SafeLookup,
     HasName,
     RemoveColumn,
     Impute,
@@ -75,6 +76,14 @@ type family Lookup (name :: Symbol) (cols :: [Type]) :: Type where
     Lookup name '[] =
         TypeError
             ('Text "Column '" ':<>: 'Text name ':<>: 'Text "' not found in schema")
+
+-- | Like 'Lookup', but returns a harmless fallback ('Int') instead of
+-- 'TypeError' when the column is not found.  Use together with
+-- 'AssertPresent' so the error fires exactly once.
+type family SafeLookup (name :: Symbol) (cols :: [Type]) :: Type where
+    SafeLookup name (Column name a ': _) = a
+    SafeLookup name (Column _ _ ': rest) = SafeLookup name rest
+    SafeLookup name '[] = Int
 
 -- | Unwrap a Maybe from a type after we impute values.
 type family Impute (name :: Symbol) (cols :: [Type]) :: [Type] where

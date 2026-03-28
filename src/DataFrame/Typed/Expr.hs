@@ -155,7 +155,7 @@ import DataFrame.Internal.Nullable (
  )
 import DataFrame.Internal.Types (Promote, PromoteDiv)
 
-import DataFrame.Typed.Schema (AssertPresent, Lookup)
+import DataFrame.Typed.Schema (AssertPresent, SafeLookup)
 import DataFrame.Typed.Types (TExpr (..), TSortOrder (..))
 import Prelude hiding (maximum, minimum, sum)
 
@@ -172,7 +172,7 @@ salary = col \@\"salary\"
 col ::
     forall (name :: Symbol) cols a.
     ( KnownSymbol name
-    , a ~ Lookup name cols
+    , a ~ SafeLookup name cols
     , Columnable a
     , AssertPresent name cols
     ) =>
