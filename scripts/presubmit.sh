@@ -10,12 +10,16 @@ cabal test
 
 cd ./dataframe-persistent
 
-cabal build
+cabal build all
 
 cd ../dataframe-hasktorch
 
 cabal build
 
 cd ../examples
+
+cabal build all
+
+cd ../dataframe-fastcsv
 
 cabal build all

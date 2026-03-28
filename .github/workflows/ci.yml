@@ -30,9 +30,11 @@ jobs:
         run: |
           cat > cabal.project <<EOF
           packages:
+            .
             examples/
             dataframe-persistent/
             dataframe-hasktorch/
+            dataframe-fastcsv/
           EOF
 
       - name: Freeze
