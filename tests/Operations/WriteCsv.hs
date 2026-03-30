@@ -23,8 +23,10 @@ toCsvBasic = TestLabel "toCsv_basic" $ TestCase $ do
 
 -- Empty DataFrame produces empty text
 toCsvEmpty :: Test
-toCsvEmpty = TestLabel "toCsv_empty" $ TestCase $
-    assertEqual "empty toCsv" T.empty (toCsv D.empty)
+toCsvEmpty =
+    TestLabel "toCsv_empty" $
+        TestCase $
+            assertEqual "empty toCsv" T.empty (toCsv D.empty)
 
 -- toSeparated with tab produces tab-delimited output
 toSeparatedTab :: Test
@@ -69,7 +71,10 @@ toCsvRoundTrip = TestLabel "toCsv_roundTrip" $ TestCase $ do
     let tmpPath = "/tmp/dataframe_test_toCsv_roundtrip.csv"
     TIO.writeFile tmpPath csvText
     df' <- D.readCsv tmpPath
-    assertEqual "round trip dimensions" (dataframeDimensions df) (dataframeDimensions df')
+    assertEqual
+        "round trip dimensions"
+        (dataframeDimensions df)
+        (dataframeDimensions df')
     assertEqual "round trip data" df df'
 
 tests :: [Test]

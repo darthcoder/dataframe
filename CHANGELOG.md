@@ -1,5 +1,26 @@
 # Revision history for dataframe
 
+## 1.1.0.0
+### Breaking changes
+* Remove `OptionalColumn` constructor; fold nullability into `BoxedColumn`/`UnboxedColumn` via bit-packed bitmap.
+* Remove `NFData` instance from `Columnable` constraint.
+
+### New features
+* Add `toCsv` and `toSeparated` for converting a DataFrame to CSV/delimited text without writing to a file.
+* `safeRead` now defaults reading columns to `Maybe a`.
+* Split SIMD CSV reader into a separate `dataframe-fastcsv` package.
+
+### Bug fixes
+* Fix joins for missing key columns (#187).
+* Fix single column not found error when using typed dataframe.
+* Fix Synthesis to use `SafeLookup` constraint.
+* Fix `writeSeparated` ignoring separator parameter (was hardcoded to comma).
+
+### Internal
+* Slice groups now use custom backpermute instead of converting unboxed vectors.
+* Reuse comparison operators in Subset.
+* Refactor `getRowAsText` for readability using pattern guards.
+
 ## 1.0.0.1
 * toMarkdownTable is now toMarkdown (mostly used internally)
 * Provide toMarkdown' that outputs string
