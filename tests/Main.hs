@@ -33,6 +33,7 @@ import qualified Operations.Statistics
 import qualified Operations.Subset
 import qualified Operations.Take
 import qualified Operations.Typing
+import qualified Operations.WriteCsv
 import qualified Parquet
 import qualified Properties
 
@@ -53,6 +54,7 @@ tests =
             ++ Operations.Nullable.tests
             ++ Operations.Provenance.tests
             ++ Operations.ReadCsv.tests
+            ++ Operations.WriteCsv.tests
             ++ Operations.Shuffle.tests
             ++ Operations.Sort.tests
             ++ Operations.Statistics.tests

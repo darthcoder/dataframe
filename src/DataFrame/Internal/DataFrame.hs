@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -18,13 +19,18 @@ import Control.DeepSeq (NFData (..), rnf)
 import Control.Exception (throw)
 import Data.Function (on)
 import Data.List (sortBy, transpose, (\\))
-import Data.Type.Equality (TestEquality (testEquality), type (:~:) (Refl))
+import Data.Maybe (fromMaybe)
+import Data.Type.Equality (
+    TestEquality (testEquality),
+    type (:~:) (Refl),
+    type (:~~:) (HRefl),
+ )
 import DataFrame.Display.Terminal.PrettyPrint
 import DataFrame.Errors
 import DataFrame.Internal.Column
 import DataFrame.Internal.Expression
 import Text.Printf
-import Type.Reflection (Typeable, typeRep)
+import Type.Reflection (Typeable, eqTypeRep, typeRep, pattern App)
 import Prelude hiding (null)
 
 data DataFrame = DataFrame
@@ -196,3 +202,40 @@ Note that a dataframe with columns but no rows is not considered null.
 -}
 null :: DataFrame -> Bool
 null df = V.null (columns df)
+
+-- | Convert a DataFrame to a CSV (comma-separated) text.
+toCsv :: DataFrame -> T.Text
+toCsv = toSeparated ','
+
+-- | Convert a DataFrame to a text representation with a custom separator.
+toSeparated :: Char -> DataFrame -> T.Text
+toSeparated sep df
+    | null df = T.empty
+    | otherwise =
+        let (rows, _) = dataframeDimensions df
+            headers = map fst (sortBy (compare `on` snd) (M.toList (columnIndices df)))
+            sepText = T.singleton sep
+            headerLine = T.intercalate sepText headers
+            dataLines = map (T.intercalate sepText . getRowAsText df) [0 .. rows - 1]
+         in T.unlines (headerLine : dataLines)
+
+getRowAsText :: DataFrame -> Int -> [T.Text]
+getRowAsText df i = map (`showElement` i) (V.toList (columns df))
+
+showElement :: Column -> Int -> T.Text
+showElement (BoxedColumn _ (c :: V.Vector a)) i = case c V.!? i of
+    Nothing -> error $ "Column index out of bounds at row " ++ show i
+    Just e
+        | Just Refl <- testEquality (typeRep @a) (typeRep @T.Text) -> e
+        | App t1 t2 <- typeRep @a
+        , Just HRefl <- eqTypeRep t1 (typeRep @Maybe) ->
+            case testEquality t2 (typeRep @T.Text) of
+                Just Refl -> fromMaybe "null" e
+                Nothing -> stripJust (T.pack (show e))
+        | otherwise -> T.pack (show e)
+showElement (UnboxedColumn _ c) i = case c VU.!? i of
+    Nothing -> error $ "Column index out of bounds at row " ++ show i
+    Just e -> T.pack (show e)
+
+stripJust :: T.Text -> T.Text
+stripJust = fromMaybe "null" . T.stripPrefix "Just "

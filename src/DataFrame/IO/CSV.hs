@@ -39,7 +39,7 @@ import Data.Maybe
 import Data.Type.Equality (TestEquality (testEquality))
 import Data.Word (Word8)
 import DataFrame.Internal.Column
-import DataFrame.Internal.DataFrame (DataFrame (..))
+import DataFrame.Internal.DataFrame (DataFrame (..), toSeparated)
 import DataFrame.Internal.Parsing
 import DataFrame.Internal.Schema
 import DataFrame.Operations.Typing
@@ -547,50 +547,7 @@ writeSeparated ::
     FilePath ->
     DataFrame ->
     IO ()
-writeSeparated c filepath df = withFile filepath WriteMode $ \handle -> do
-    let (rows, _) = dataframeDimensions df
-    let headers = map fst (L.sortBy (compare `on` snd) (M.toList (columnIndices df)))
-    TIO.hPutStrLn handle (T.intercalate "," headers)
-    forM_ [0 .. (rows - 1)] $ \i -> do
-        let row = getRowAsText df i
-        TIO.hPutStrLn handle (T.intercalate "," row)
-
-getRowAsText :: DataFrame -> Int -> [T.Text]
-getRowAsText df i = V.ifoldr go [] (columns df)
-  where
-    indexMap = M.fromList (map (\(a, b) -> (b, a)) $ M.toList (columnIndices df))
-    go k (BoxedColumn _ (c :: V.Vector a)) acc = case c V.!? i of
-        Just e -> textRep : acc
-          where
-            textRep = case testEquality (typeRep @a) (typeRep @T.Text) of
-                Just Refl -> e
-                Nothing -> case typeRep @a of
-                    App t1 t2 -> case eqTypeRep t1 (typeRep @Maybe) of
-                        Just HRefl -> case testEquality t2 (typeRep @T.Text) of
-                            Just Refl -> fromMaybe "null" e
-                            Nothing -> (fromOptional . T.pack . show) e
-                              where
-                                fromOptional s
-                                    | T.isPrefixOf "Just " s = T.drop (T.length "Just ") s
-                                    | otherwise = "null"
-                        Nothing -> (T.pack . show) e
-                    _ -> (T.pack . show) e
-        Nothing ->
-            error $
-                "Column "
-                    ++ T.unpack (indexMap M.! k)
-                    ++ " has less items than "
-                    ++ "the other columns at index "
-                    ++ show i
-    go k (UnboxedColumn _ c) acc = case c VU.!? i of
-        Just e -> T.pack (show e) : acc
-        Nothing ->
-            error $
-                "Column "
-                    ++ T.unpack (indexMap M.! k)
-                    ++ " has less items than "
-                    ++ "the other columns at index "
-                    ++ show i
+writeSeparated c filepath df = TIO.writeFile filepath (toSeparated c df)
 
 stripQuotes :: T.Text -> T.Text
 stripQuotes txt =

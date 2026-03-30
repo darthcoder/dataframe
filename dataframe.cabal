@@ -261,6 +261,7 @@ test-suite tests
                    Operations.Nullable,
                    Operations.Provenance,
                    Operations.ReadCsv,
+                   Operations.WriteCsv,
                    Operations.Shuffle,
                    Operations.Sort,
                    Operations.Subset,

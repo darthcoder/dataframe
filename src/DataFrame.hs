@@ -281,8 +281,10 @@ import DataFrame.Internal.DataFrame as Dataframe (
     GroupedDataFrame,
     empty,
     null,
+    toCsv,
     toMarkdown,
     toMarkdown',
+    toSeparated,
  )
 import DataFrame.Internal.Expression as Expression (Expr, prettyPrint)
 import DataFrame.Internal.Row as Row (
