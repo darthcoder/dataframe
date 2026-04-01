@@ -7,9 +7,9 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified DataFrame as D
+import DataFrame.IO.CSV (fromCsv, fromCsvBytes)
 import qualified DataFrame.Internal.Column as DI
 import DataFrame.Internal.DataFrame (DataFrame (..), toCsv)
-import DataFrame.IO.CSV (fromCsv, fromCsvBytes)
 import qualified DataFrame.Operations.Core as D
 import Test.HUnit (
     Test (TestCase, TestLabel),
@@ -56,7 +56,10 @@ fromCsvRoundTrip = TestLabel "fromCsv_roundTrip" $ TestCase $ do
     case result of
         Left err -> assertFailure $ "Unexpected Left: " ++ err
         Right df' -> do
-            assertEqual "round trip dimensions" (dataframeDimensions df) (dataframeDimensions df')
+            assertEqual
+                "round trip dimensions"
+                (dataframeDimensions df)
+                (dataframeDimensions df')
             assertEqual "round trip data" df df'
 
 -- | Round trip via fromCsvBytes.
@@ -69,7 +72,10 @@ fromCsvBytesRoundTrip = TestLabel "fromCsvBytes_roundTrip" $ TestCase $ do
                 ]
     let bs = BL.fromStrict (TE.encodeUtf8 (toCsv df))
     df' <- fromCsvBytes bs
-    assertEqual "round trip dimensions" (dataframeDimensions df) (dataframeDimensions df')
+    assertEqual
+        "round trip dimensions"
+        (dataframeDimensions df)
+        (dataframeDimensions df')
 
 -- | Single column CSV.
 fromCsvSingleColumn :: Test
