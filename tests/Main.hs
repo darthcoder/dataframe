@@ -11,6 +11,7 @@ import Test.QuickCheck
 
 import qualified DecisionTree
 import qualified Functions
+import qualified IO.CSV
 import qualified IO.JSON
 import qualified Internal.Parsing
 import qualified LazyParquet
@@ -62,6 +63,7 @@ tests =
             ++ Operations.Take.tests
             ++ Operations.Typing.tests
             ++ Functions.tests
+            ++ IO.CSV.tests
             ++ IO.JSON.tests
             ++ Parquet.tests
             ++ LazyParquet.tests

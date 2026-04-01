@@ -250,6 +250,8 @@ import DataFrame.IO.CSV as CSV (
     ReadOptions (..),
     TypeSpec (..),
     defaultReadOptions,
+    fromCsv,
+    fromCsvBytes,
     readCsv,
     readCsvWithOpts,
     readSeparated,

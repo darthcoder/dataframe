@@ -27,6 +27,7 @@ import Data.Csv.Streaming (Records (..))
 import qualified Data.Csv.Streaming as CsvStream
 
 import Control.DeepSeq
+import Control.Exception (SomeException, catch)
 import Control.Monad
 import Data.Char
 import qualified Data.Csv as Csv
@@ -546,6 +547,17 @@ writeSeparated ::
     DataFrame ->
     IO ()
 writeSeparated c filepath df = TIO.writeFile filepath (toSeparated c df)
+
+-- | Parse a CSV string into a DataFrame using default options.
+fromCsv :: String -> IO (Either String DataFrame)
+fromCsv s = do
+    let bs = BL.fromStrict (TE.encodeUtf8 (T.pack s))
+    (Right <$> decodeSeparated defaultReadOptions bs)
+        `catch` (\(e :: SomeException) -> pure (Left (show e)))
+
+-- | Parse a lazy 'ByteString' containing CSV data into a DataFrame using default options.
+fromCsvBytes :: BL.ByteString -> IO DataFrame
+fromCsvBytes = decodeSeparated defaultReadOptions
 
 stripQuotes :: T.Text -> T.Text
 stripQuotes txt =
