@@ -7,9 +7,7 @@ import Test.HUnit
 import qualified Operations.ReadCsv
 
 tests :: Test
-tests =
-    TestList $
-        Operations.ReadCsv.tests
+tests = TestList Operations.ReadCsv.tests
 
 main :: IO ()
 main = do
