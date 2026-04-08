@@ -197,6 +197,7 @@ applyDictWithRepStitch ::
     DictVals ->
     VU.Vector Int ->
     Int ->
+    Int ->
     [Int] ->
     [Int] ->
     DI.Column
@@ -209,13 +210,13 @@ applyDictWithRepStitch dictVals idxs maxRep maxDef repLvls defLvls =
         DInt64 ds ->
             stitchForRepInt64 maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
         DInt96 ds ->
-            stitchForRepUTCTime maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
+            stitchForRepUTCTime maxRep maxDef repLvls defLvls (map (ds V.!) (VU.toList idxs))
         DFloat ds ->
             stitchForRepFloat maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
         DDouble ds ->
             stitchForRepDouble maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
         DText ds ->
-            stitchForRepText maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
+            stitchForRepText maxRep maxDef repLvls defLvls (map (ds V.!) (VU.toList idxs))
 
 decodeDictV1 ::
     Maybe DictVals ->
