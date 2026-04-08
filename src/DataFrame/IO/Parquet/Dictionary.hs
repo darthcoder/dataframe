@@ -192,6 +192,31 @@ applyDictToColumn dict idxs maxDef defLvls
                 then DI.fromVector vec -- VB.Vector (Maybe a) → OptionalColumn
                 else DI.fromVector (V.map fromJust vec) -- VB.Vector a → BoxedColumn/UnboxedColumn
 
+-- | Apply dictionary indices to a rep-level stitch path, avoiding intermediate list materialization.
+applyDictWithRepStitch ::
+    DictVals ->
+    VU.Vector Int ->
+    Int ->
+    [Int] ->
+    [Int] ->
+    DI.Column
+applyDictWithRepStitch dictVals idxs maxRep maxDef repLvls defLvls =
+    case dictVals of
+        DBool ds ->
+            stitchForRepBool maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
+        DInt32 ds ->
+            stitchForRepInt32 maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
+        DInt64 ds ->
+            stitchForRepInt64 maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
+        DInt96 ds ->
+            stitchForRepUTCTime maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
+        DFloat ds ->
+            stitchForRepFloat maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
+        DDouble ds ->
+            stitchForRepDouble maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
+        DText ds ->
+            stitchForRepText maxRep maxDef repLvls defLvls (VU.toList (VU.map (ds V.!) idxs))
+
 decodeDictV1 ::
     Maybe DictVals ->
     Int ->
@@ -214,34 +239,7 @@ decodeDictV1 dictValsM maxDef maxRep repLvls defLvls nPresent bytes =
                                 ++ ", expected "
                                 ++ show nPresent
                     if maxRep > 0
-                        then do
-                            case dictVals of
-                                DBool ds ->
-                                    pure $
-                                        stitchForRepBool maxRep maxDef repLvls defLvls (map (ds V.!) (VU.toList idxs))
-                                DInt32 ds ->
-                                    pure $
-                                        stitchForRepInt32 maxRep maxDef repLvls defLvls (map (ds V.!) (VU.toList idxs))
-                                DInt64 ds ->
-                                    pure $
-                                        stitchForRepInt64 maxRep maxDef repLvls defLvls (map (ds V.!) (VU.toList idxs))
-                                DInt96 ds ->
-                                    pure $
-                                        stitchForRepUTCTime
-                                            maxRep
-                                            maxDef
-                                            repLvls
-                                            defLvls
-                                            (map (ds V.!) (VU.toList idxs))
-                                DFloat ds ->
-                                    pure $
-                                        stitchForRepFloat maxRep maxDef repLvls defLvls (map (ds V.!) (VU.toList idxs))
-                                DDouble ds ->
-                                    pure $
-                                        stitchForRepDouble maxRep maxDef repLvls defLvls (map (ds V.!) (VU.toList idxs))
-                                DText ds ->
-                                    pure $
-                                        stitchForRepText maxRep maxDef repLvls defLvls (map (ds V.!) (VU.toList idxs))
+                        then pure $ applyDictWithRepStitch dictVals idxs maxRep maxDef repLvls defLvls
                         else case dictVals of
                             -- Fast path: unboxable types, no nulls — one allocation via VU.map
                             DInt32 ds | maxDef == 0 -> pure $ DI.fromUnboxedVector (VU.map (ds V.!) idxs)
